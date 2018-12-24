@@ -10,11 +10,17 @@ class Rule:
 
         self.num_required = 1
         self.splits = [(feature_idx, split_value)]
+        self.blacklist = {feature_idx}
         self.score = None
 
     def add_split(self, feature_idx, split_value):
 
-        self.splits.append((feature_idx, split_value))
+        if feature_idx not in self.blacklist:
+            self.splits.append((feature_idx, split_value))
+            self.blacklist.add(feature_idx)
+            return True
+
+        return False
 
     def get_masks(self, data):
 
@@ -140,11 +146,13 @@ def find_best_binary_split(data, labels):
     return best_rule
 
 
-def beam_search(first_rule, data, labels, beam_width=2):
+def beam_search(first_rule, data, labels, beam_width=2, feature_blacklist=None):
 
-    # TODO: add constraints from before, make sure a rule doesn't contain two constraints on the same feature
-
-    feature_blacklist = set([split[0] for split in first_rule.splits])
+    # don't use the same feature twice on the path to this node
+    if feature_blacklist is not None:
+        feature_blacklist.add(first_rule.splits[0][0])
+    else:
+        feature_blacklist = {first_rule.splits[0][0]}
 
     num_features = data.shape[1]
     beam = Beam(beam_width)
@@ -164,7 +172,10 @@ def beam_search(first_rule, data, labels, beam_width=2):
                 for op_idx in range(2):
 
                     tmp_rule = cp.deepcopy(rule)
-                    tmp_rule.add_split(feature_idx, 0.5)
+
+                    if not tmp_rule.add_split(feature_idx, 0.5):
+                        # don't use the same feature twice in a rule
+                        continue
 
                     if op_idx == 1:
                         tmp_rule.num_required += 1
