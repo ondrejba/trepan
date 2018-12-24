@@ -2,21 +2,27 @@ import functools
 import itertools
 import copy as cp
 import numpy as np
+from enum import Enum
 
 
 class Rule:
 
-    def __init__(self, feature_idx, split_value):
+    class SplitType(Enum):
+
+        ABOVE = 1
+        BELOW = 2
+
+    def __init__(self, feature_idx, split_value, split_type):
 
         self.num_required = 1
-        self.splits = [(feature_idx, split_value)]
+        self.splits = [(feature_idx, split_value, split_type)]
         self.blacklist = {feature_idx}
         self.score = None
 
-    def add_split(self, feature_idx, split_value):
+    def add_split(self, feature_idx, split_value, split_type):
 
         if feature_idx not in self.blacklist:
-            self.splits.append((feature_idx, split_value))
+            self.splits.append((feature_idx, split_value, split_type))
             self.blacklist.add(feature_idx)
             return True
 
@@ -29,7 +35,11 @@ class Rule:
 
         for split in self.splits:
 
-            split_mask = data[:, split[0]] >= split[1]
+            if split[2] == self.SplitType.ABOVE:
+                split_mask = data[:, split[0]] >= split[1]
+            else:
+                split_mask = data[:, split[0]] < split[1]
+
             split_masks.append(split_mask)
 
         for num_required in range(1, self.num_required + 1):
@@ -140,7 +150,7 @@ def find_best_binary_split(data, labels):
         if best_ig is None or best_ig < ig:
 
             best_ig = ig
-            best_rule = Rule(feature_idx, 0.5)
+            best_rule = Rule(feature_idx, 0.5, Rule.SplitType.ABOVE)
             best_rule.score = ig
 
     return best_rule
@@ -166,24 +176,26 @@ def beam_search(first_rule, data, labels, beam_width=2, feature_blacklist=None):
 
             for feature_idx in range(num_features):
 
-                if feature_idx in feature_blacklist:
-                    continue
+                for split_type in [Rule.SplitType.ABOVE, Rule.SplitType.BELOW]:
 
-                for op_idx in range(2):
-
-                    tmp_rule = cp.deepcopy(rule)
-
-                    if not tmp_rule.add_split(feature_idx, 0.5):
-                        # don't use the same feature twice in a rule
+                    if feature_idx in feature_blacklist:
                         continue
 
-                    if op_idx == 1:
-                        tmp_rule.num_required += 1
+                    for op_idx in range(2):
 
-                    mask_a, mask_b = tmp_rule.get_masks(data)
-                    tmp_rule.score = information_gain(labels, labels[mask_a], labels[mask_b])
+                        tmp_rule = cp.deepcopy(rule)
 
-                    beam_changed = beam.add_item(tmp_rule, tmp_rule.score)
+                        if not tmp_rule.add_split(feature_idx, 0.5, split_type):
+                            # don't use the same feature twice in a rule
+                            continue
+
+                        if op_idx == 1:
+                            tmp_rule.num_required += 1
+
+                        mask_a, mask_b = tmp_rule.get_masks(data)
+                        tmp_rule.score = information_gain(labels, labels[mask_a], labels[mask_b])
+
+                        beam_changed = beam.add_item(tmp_rule, tmp_rule.score)
 
             if beam_changed:
                 break
