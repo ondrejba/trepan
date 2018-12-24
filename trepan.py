@@ -5,6 +5,49 @@ import numpy as np
 from enum import Enum
 
 
+class Trepan:
+
+    class Node:
+
+        def __init__(self):
+
+            self.rule = None
+            self.left_child = None
+            self.right_child = None
+
+            self.leaf = True
+            self.blacklist = set()
+
+    def __init__(self, data, labels):
+
+        self.root = self.Node()
+        self.queue = [(self.root, data, labels, set())]
+
+    def step(self):
+
+        node, data, labels, blacklist = self.queue[0]
+        del self.queue[0]
+
+        # TODO: run oracle on data
+
+        best_simple_rule = find_best_binary_split(data, labels)
+        best_m_of_n_rule = beam_search(best_simple_rule, data, labels, feature_blacklist=blacklist)
+
+        node.left = False
+        node.rule = best_m_of_n_rule
+
+        node.left_child = self.Node()
+        node.right_child = self.Node()
+
+        # TODO: determine if children should become leafs
+
+        mask_a, mask_b = node.rule.get_masks(data)
+        new_blacklist = blacklist.union(node.rule.blacklist)
+
+        self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
+        self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
+
+
 class Rule:
 
     class SplitType(Enum):
@@ -20,6 +63,8 @@ class Rule:
         self.score = None
 
     def add_split(self, feature_idx, split_value, split_type):
+
+        # TODO: add backtracking
 
         if feature_idx not in self.blacklist:
             self.splits.append((feature_idx, split_value, split_type))
