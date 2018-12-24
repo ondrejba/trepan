@@ -142,6 +142,8 @@ def find_best_binary_split(data, labels):
 
 def beam_search(first_rule, data, labels, beam_width=2):
 
+    # TODO: add constraints from before, make sure a rule doesn't contain two constraints on the same feature
+
     feature_blacklist = set([split[0] for split in first_rule.splits])
 
     num_features = data.shape[1]
