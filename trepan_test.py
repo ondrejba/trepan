@@ -31,3 +31,20 @@ class TestTrepan(unittest.TestCase):
         ig = trepan.information_gain(labels, labels_a, labels_b)
 
         self.assertTrue(0.8 <= ig <= 0.82)
+
+    def test_beam_search(self):
+
+        data_1 = np.stack([np.zeros(25), np.zeros(25)], axis=1)
+        data_2 = np.stack([np.ones(25), np.ones(25)], axis=1)
+        data_3 = np.stack([np.zeros(25), np.ones(25)], axis=1)
+        data_4 = np.stack([np.ones(25), np.zeros(25)], axis=1)
+
+        data = np.concatenate([data_1, data_2, data_3, data_4], axis=0)
+        labels = np.concatenate([np.zeros(25), np.ones(75)], axis=0)
+
+        best_first = trepan.find_best_binary_split(data, labels)
+
+        best_n = trepan.beam_search(best_first, data, labels)
+
+        self.assertGreater(best_n.score, best_first.score)
+        np.testing.assert_almost_equal(best_n.score - trepan.entropy(labels), 0.0)
