@@ -48,3 +48,31 @@ class TestTrepan(unittest.TestCase):
 
         self.assertGreater(best_n.score, best_first.score)
         np.testing.assert_almost_equal(best_n.score - trepan.entropy(labels), 0.0)
+
+
+class TestOracle(unittest.TestCase):
+
+    def test_gen_discrete(self):
+
+        np.random.seed(2018)
+
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(1, dtype=np.float32), np.ones(99, dtype=np.float32)], axis=0)
+
+        data = np.stack([f1, f2], axis=1)
+
+        oracle = trepan.Oracle(lambda x: np.zeros_like(x), 400, trepan.Oracle.DataType.DISCRETE)
+
+        new_data = oracle.gen_discrete(data, [], 10000)
+
+        f1_1 = np.sum((new_data[:, 0] == 0).astype(np.float32))
+        f1_2 = np.sum((new_data[:, 0] == 1).astype(np.float32))
+
+        f2_1 = np.sum((new_data[:, 1] == 0).astype(np.float32))
+        f2_2 = np.sum((new_data[:, 1] == 1).astype(np.float32))
+
+        p0_0 = f1_1 / (f1_1 + f1_2)
+        p1_0 = f2_1 / (f2_1 + f2_2)
+
+        self.assertTrue(0.74 <= p0_0 <= 0.76)
+        self.assertTrue(0.09 <= p1_0 <= 0.11)

@@ -100,6 +100,24 @@ class Rule:
 
         return mask_a, mask_b
 
+    def match(self, features):
+
+        matches = 0
+
+        for split in self.splits:
+
+            if split[2] == self.SplitType.ABOVE:
+                if features[split[0]] >= split[1]:
+                    matches += 1
+            else:
+                if features[split[0]] < split[1]:
+                    matches += 1
+
+        if matches >= self.num_required:
+            return True
+
+        return False
+
 
 class Beam:
 
@@ -146,6 +164,90 @@ class Beam:
         idx = self.scores.index(max_score)
 
         return self.items[idx]
+
+
+class Oracle:
+
+    class DataType(Enum):
+
+        DISCRETE = 1
+        CONTINUOUS = 2
+
+    def __init__(self, predict, min_samples, data_type):
+
+        self.predict = predict
+        self.min_samples = min_samples
+        self.data_type = data_type
+
+    def fill_data(self, data, labels, constraints):
+
+        if data.shape[0] < self.min_samples:
+
+            if self.data_type == self.DataType.DISCRETE:
+                data_synth = self.gen_discrete(data, constraints, self.min_samples - data.shape[0])
+            else:
+                raise NotImplementedError("Density estimates not implemented.")
+
+            labels_synth = self.predict(data_synth)
+
+            data = np.concatenate([data, data_synth], axis=0)
+            labels = np.concatenate([labels, labels_synth], axis=0)
+
+        return data, labels
+
+    def gen_discrete(self, data, constraints, to_generate):
+
+        # create a histogram for each feature
+        num_features = data.shape[1]
+        counts = [{} for _ in range(num_features)]
+        sums = np.zeros(num_features, dtype=np.float32)
+
+        for feature_idx in range(num_features):
+
+            values = np.unique(data[:, feature_idx])
+
+            for value in values:
+
+                count = np.sum((data[:, feature_idx] == value).astype(np.float32))
+                counts[feature_idx][value] = count
+                sums[feature_idx] += count
+
+        for count_dict, count_sum in zip(counts, sums):
+            for key in count_dict.keys():
+                count_dict[key] /= count_sum
+
+        probs = [[] for _ in range(num_features)]
+        values = [[] for _ in range(num_features)]
+
+        for idx, count_dict in enumerate(counts):
+            for key, value in count_dict.items():
+                probs[idx].append(value)
+                values[idx].append(key)
+
+        # generate samples
+        samples = np.zeros((to_generate, data.shape[1]), dtype=np.float32)
+
+        for sample_idx in range(to_generate):
+
+            while True:
+
+                # generate features
+                for feature_idx in range(num_features):
+
+                    feature = np.random.choice(values[feature_idx], size=1, replace=False, p=probs[feature_idx])
+                    samples[sample_idx, feature_idx] = feature
+
+                all_matched = True
+
+                # check for constraints
+                for constraint in constraints:
+                    if not constraint.match(samples[sample_idx]):
+                        all_matched = False
+
+                if all_matched:
+                    break
+
+        return samples
 
 
 def information_gain(labels, labels_a, labels_b, e_labels=None):
