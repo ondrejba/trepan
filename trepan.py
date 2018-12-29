@@ -39,13 +39,11 @@ class Trepan:
 
             return constraints
 
-    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, epsilon=0.05, delta=0.05):
+    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples):
 
         self.oracle = oracle
         self.max_internal_nodes = max_internal_nodes
         self.min_samples = min_samples
-        self.epsilon = epsilon
-        self.delta = delta
 
         self.num_internal_nodes = 0
 
@@ -64,7 +62,7 @@ class Trepan:
         best_simple_rule = find_best_binary_split(split_data, split_labels)
         best_m_of_n_rule = beam_search(best_simple_rule, split_data, split_labels, feature_blacklist=blacklist)
 
-        node.left = False
+        node.leaf = False
         node.rule = best_m_of_n_rule
 
         node.left_child = self.Node()
@@ -95,7 +93,7 @@ class Trepan:
 
             if len(np.unique(test_labels_b)) > 1:
                 self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
-                
+
 
 class Rule:
 
@@ -300,7 +298,7 @@ class Oracle:
                         if not constraint.match(samples[sample_idx]):
                             all_matched = False
                     else:
-                        if constraints.match(samples[sample_idx]):
+                        if constraint.match(samples[sample_idx]):
                             all_matched = False
 
                 if all_matched:

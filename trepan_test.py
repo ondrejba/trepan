@@ -1,9 +1,87 @@
 import unittest
+import copy as cp
 import numpy as np
 import trepan
 
 
 class TestTrepan(unittest.TestCase):
+
+    def test_node_get_upstream_constraints(self):
+
+        p = trepan.Trepan.Node()
+        p_lc = trepan.Trepan.Node()
+        p_rc = trepan.Trepan.Node()
+        p_lc_rc = trepan.Trepan.Node()
+
+        p.left_child = p_lc
+        p_lc.parent = p
+
+        p.right_child = p_rc
+        p_rc.parent = p
+
+        p_lc.right_child = p_lc_rc
+        p_lc_rc.parent = p_lc
+
+        p.rule = 0
+        p_lc.rule = 1
+        p_lc_rc.rule = 2
+        p_rc.rule = 3
+
+        constraints = p_lc_rc.get_upstream_constraints()
+
+        ref_constraints = [("right", 1), ("left", 0)]
+
+        self.assertEqual(constraints, ref_constraints)
+
+    def test_step_end(self):
+
+        np.random.seed(2018)
+
+        data = np.concatenate([np.zeros(100, dtype=np.float32), np.ones(100, dtype=np.float32)], axis=0)
+        labels = cp.deepcopy(data)
+        data = np.expand_dims(data, axis=1)
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+        tp = trepan.Trepan(data, labels, oracle, 15, 50)
+
+        tp.step()
+
+        self.assertIsNotNone(tp.root.left_child)
+        self.assertIsNotNone(tp.root.left_child.parent)
+        self.assertIsNotNone(tp.root.right_child)
+        self.assertIsNotNone(tp.root.right_child.parent)
+
+        self.assertIsNone(tp.root.left_child.rule)
+        self.assertIsNone(tp.root.right_child.rule)
+
+        self.assertEqual(len(tp.queue), 0)
+
+    def test_step_continue(self):
+
+        np.random.seed(2018)
+
+        data = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(20, dtype=np.float32)], axis=0)
+        data = np.expand_dims(data, axis=1)
+
+        labels = np.concatenate([
+            np.zeros(10, dtype=np.float32), np.ones(10, dtype=np.float32),
+            np.ones(10, dtype=np.float32) + 1, np.ones(10, dtype=np.float32) + 2
+        ], axis=0)
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+        tp = trepan.Trepan(data, labels, oracle, 15, 50)
+
+        tp.step()
+
+        self.assertIsNotNone(tp.root.left_child)
+        self.assertIsNotNone(tp.root.left_child.parent)
+        self.assertIsNotNone(tp.root.right_child)
+        self.assertIsNotNone(tp.root.right_child.parent)
+
+        self.assertIsNone(tp.root.left_child.rule)
+        self.assertIsNone(tp.root.right_child.rule)
+
+        self.assertEqual(len(tp.queue), 2)
 
     def test_entropy(self):
 
@@ -61,7 +139,7 @@ class TestOracle(unittest.TestCase):
 
         data = np.stack([f1, f2], axis=1)
 
-        oracle = trepan.Oracle(lambda x: np.zeros_like(x), 400, trepan.Oracle.DataType.DISCRETE)
+        oracle = trepan.Oracle(lambda x: np.zeros_like(x), trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
 
         new_data = oracle.gen_discrete(data, [], 10000)
 
@@ -75,4 +153,4 @@ class TestOracle(unittest.TestCase):
         p1_0 = f2_1 / (f2_1 + f2_2)
 
         self.assertTrue(0.74 <= p0_0 <= 0.76)
-        self.assertTrue(0.09 <= p1_0 <= 0.11)
+        self.assertTrue(0.009 <= p1_0 <= 0.011)
