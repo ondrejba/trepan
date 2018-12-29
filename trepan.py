@@ -45,10 +45,16 @@ class Trepan:
         self.max_internal_nodes = max_internal_nodes
         self.min_samples = min_samples
 
-        self.num_internal_nodes = 0
+        self.num_internal_nodes = 1
 
         self.root = self.Node()
+        self.root.leaf = False
         self.queue = [(self.root, data, labels, set())]
+
+    def train(self):
+
+        while len(self.queue) > 0:
+            self.step()
 
     def step(self):
 
@@ -71,28 +77,30 @@ class Trepan:
         node.left_child.parent = node
         node.right_child.parent = node
 
-        self.num_internal_nodes += 1
-
         mask_a, mask_b = node.rule.get_masks(data)
         new_blacklist = blacklist.union(node.rule.blacklist)
 
-        if self.num_internal_nodes < self.max_internal_nodes:
+        if np.sum(mask_a) > 0 and self.num_internal_nodes < self.max_internal_nodes:
 
             test_data_a, test_labels_a = self.oracle.fill_data(
                 data[mask_a], labels[mask_a], node.left_child.get_upstream_constraints(),
                 self.oracle.get_stop_num_samples()
             )
 
+            if len(np.unique(test_labels_a)) > 1:
+                self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
+                self.num_internal_nodes += 1
+
+        if np.sum(mask_b) > 0 and self.num_internal_nodes < self.max_internal_nodes:
+
             test_data_b, test_labels_b = self.oracle.fill_data(
                 data[mask_b], labels[mask_b], node.right_child.get_upstream_constraints(),
                 self.oracle.get_stop_num_samples()
             )
 
-            if len(np.unique(test_labels_a)) > 1:
-                self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
-
             if len(np.unique(test_labels_b)) > 1:
                 self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
+                self.num_internal_nodes += 1
 
 
 class Rule:

@@ -83,6 +83,48 @@ class TestTrepan(unittest.TestCase):
 
         self.assertEqual(len(tp.queue), 2)
 
+    def test_train_impossible(self):
+        np.random.seed(2018)
+
+        data = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(20, dtype=np.float32)], axis=0)
+        data = np.expand_dims(data, axis=1)
+
+        labels = np.concatenate([
+            np.zeros(10, dtype=np.float32), np.ones(10, dtype=np.float32),
+            np.ones(10, dtype=np.float32) + 1, np.ones(10, dtype=np.float32) + 2
+        ], axis=0)
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+        tp = trepan.Trepan(data, labels, oracle, 15, 50)
+
+        tp.train()
+
+        def count_nodes(node):
+
+            internal = 0
+            leafs = 0
+
+            if node is not None:
+
+                if node.leaf:
+                    leafs += 1
+                else:
+                    internal += 1
+
+                x, y = count_nodes(node.left_child)
+                internal += x
+                leafs += y
+
+                x, y = count_nodes(node.right_child)
+                internal += x
+                leafs += y
+
+            return internal, leafs
+
+        internal_count, _ = count_nodes(tp.root)
+
+        self.assertEqual(internal_count, 15)
+
     def test_entropy(self):
 
         labels_1 = np.ones(100, dtype=np.int32)
