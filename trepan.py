@@ -2,6 +2,7 @@ import functools
 import itertools
 import copy as cp
 import numpy as np
+from scipy.stats import norm
 from enum import Enum
 
 
@@ -14,11 +15,39 @@ class Trepan:
             self.rule = None
             self.left_child = None
             self.right_child = None
+            self.parent = None
 
             self.leaf = True
             self.blacklist = set()
 
-    def __init__(self, data, labels):
+        def get_upstream_constraints(self):
+
+            constraints = []
+
+            prev = self
+            parent = self.parent
+
+            while parent is not None:
+
+                if parent.left_child is prev:
+                    constraints.append(("left", parent.rule))
+                else:
+                    constraints.append(("right", parent.rule))
+
+                prev = parent
+                parent = parent.parent
+
+            return constraints
+
+    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, epsilon=0.05, delta=0.05):
+
+        self.oracle = oracle
+        self.max_internal_nodes = max_internal_nodes
+        self.min_samples = min_samples
+        self.epsilon = epsilon
+        self.delta = delta
+
+        self.num_internal_nodes = 0
 
         self.root = self.Node()
         self.queue = [(self.root, data, labels, set())]
@@ -28,10 +57,12 @@ class Trepan:
         node, data, labels, blacklist = self.queue[0]
         del self.queue[0]
 
-        # TODO: run oracle on data
+        split_data, split_labels = self.oracle.fill_data(
+            data, labels, node.get_upstream_constraints(), self.min_samples
+        )
 
-        best_simple_rule = find_best_binary_split(data, labels)
-        best_m_of_n_rule = beam_search(best_simple_rule, data, labels, feature_blacklist=blacklist)
+        best_simple_rule = find_best_binary_split(split_data, split_labels)
+        best_m_of_n_rule = beam_search(best_simple_rule, split_data, split_labels, feature_blacklist=blacklist)
 
         node.left = False
         node.rule = best_m_of_n_rule
@@ -39,14 +70,32 @@ class Trepan:
         node.left_child = self.Node()
         node.right_child = self.Node()
 
-        # TODO: determine if children should become leafs
+        node.left_child.parent = node
+        node.right_child.parent = node
+
+        self.num_internal_nodes += 1
 
         mask_a, mask_b = node.rule.get_masks(data)
         new_blacklist = blacklist.union(node.rule.blacklist)
 
-        self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
-        self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
+        if self.num_internal_nodes < self.max_internal_nodes:
 
+            test_data_a, test_labels_a = self.oracle.fill_data(
+                data[mask_a], labels[mask_a], node.left_child.get_upstream_constraints(),
+                self.oracle.get_stop_num_samples()
+            )
+
+            test_data_b, test_labels_b = self.oracle.fill_data(
+                data[mask_b], labels[mask_b], node.right_child.get_upstream_constraints(),
+                self.oracle.get_stop_num_samples()
+            )
+
+            if len(np.unique(test_labels_a)) > 1:
+                self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
+
+            if len(np.unique(test_labels_b)) > 1:
+                self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
+                
 
 class Rule:
 
@@ -173,18 +222,19 @@ class Oracle:
         DISCRETE = 1
         CONTINUOUS = 2
 
-    def __init__(self, predict, min_samples, data_type):
+    def __init__(self, predict, data_type, epsilon, delta):
 
         self.predict = predict
-        self.min_samples = min_samples
         self.data_type = data_type
+        self.epsilon = epsilon
+        self.delta = delta
 
-    def fill_data(self, data, labels, constraints):
+    def fill_data(self, data, labels, constraints, min_samples):
 
-        if data.shape[0] < self.min_samples:
+        if data.shape[0] < min_samples:
 
             if self.data_type == self.DataType.DISCRETE:
-                data_synth = self.gen_discrete(data, constraints, self.min_samples - data.shape[0])
+                data_synth = self.gen_discrete(data, constraints, min_samples - data.shape[0])
             else:
                 raise NotImplementedError("Density estimates not implemented.")
 
@@ -194,6 +244,11 @@ class Oracle:
             labels = np.concatenate([labels, labels_synth], axis=0)
 
         return data, labels
+
+    def get_stop_num_samples(self):
+
+        z = norm.ppf(1 - self.epsilon)
+        return int(((z ** 2) * (1 - self.epsilon)) / self.epsilon)
 
     def gen_discrete(self, data, constraints, to_generate):
 
@@ -240,9 +295,13 @@ class Oracle:
                 all_matched = True
 
                 # check for constraints
-                for constraint in constraints:
-                    if not constraint.match(samples[sample_idx]):
-                        all_matched = False
+                for side, constraint in constraints:
+                    if side == "left":
+                        if not constraint.match(samples[sample_idx]):
+                            all_matched = False
+                    else:
+                        if constraints.match(samples[sample_idx]):
+                            all_matched = False
 
                 if all_matched:
                     break
