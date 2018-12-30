@@ -170,6 +170,69 @@ class TestTrepan(unittest.TestCase):
         np.testing.assert_almost_equal(best_n.score - trepan.entropy(labels), 0.0)
 
 
+class TestOracle(unittest.TestCase):
+
+    def test_sample_with_hard_constraints(self):
+
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(50, dtype=np.float32), np.ones(50, dtype=np.float32)], axis=0)
+        f3 = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(80, dtype=np.float32)], axis=0)
+
+        data = np.stack([f1, f2, f3], axis=1)
+
+        model = trepan.DiscreteModel()
+        model.fit(data)
+
+        constraints = [
+            ("left", trepan.Rule(0, 0.5, trepan.Rule.SplitType.BELOW)),
+            ("right", trepan.Rule(2, 0.5, trepan.Rule.SplitType.BELOW))
+        ]
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+
+        num_samples = 1000
+        samples = []
+
+        for _ in range(num_samples):
+
+            samples.append(oracle.sample_with_constraints(model, constraints))
+
+        samples = np.stack(samples)
+
+        self.assertTrue(np.all(samples[:, 0] == 0))
+        self.assertTrue(np.all(samples[:, 2] == 1))
+
+        p1_0 = np.sum(samples[:, 1] == 0) / samples.shape[0]
+        p1_1 = np.sum(samples[:, 1] == 1) / samples.shape[0]
+
+        self.assertTrue(0.4 <= p1_0 <= 0.6)
+        self.assertTrue(0.4 <= p1_1 <= 0.6)
+
+    def test_sample_with_disj_constaints(self):
+
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(50, dtype=np.float32), np.ones(50, dtype=np.float32)], axis=0)
+        f3 = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(80, dtype=np.float32)], axis=0)
+
+        data = np.stack([f1, f2, f3], axis=1)
+
+        model = trepan.DiscreteModel()
+        model.fit(data)
+
+        rule = trepan.Rule(0, 0.5, trepan.Rule.SplitType.BELOW)
+        rule.add_split(1, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule.add_split(2, 0.5, trepan.Rule.SplitType.BELOW)
+        rule.num_required = 2
+
+        constraints = [
+            ("left", rule)
+        ]
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+
+        oracle.sample_with_constraints(model, constraints)
+
+
 class TestDiscreteModel(unittest.TestCase):
 
     def test_fit(self):
@@ -220,7 +283,7 @@ class TestDiscreteModel(unittest.TestCase):
     def test_set_zero(self):
 
         f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
-        f2 = np.concatenate([np.zeros(1, dtype=np.float32), np.ones(99, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(50, dtype=np.float32), np.ones(50, dtype=np.float32)], axis=0)
 
         data = np.stack([f1, f2], axis=1)
 
@@ -232,3 +295,38 @@ class TestDiscreteModel(unittest.TestCase):
 
         for _ in range(100):
             np.testing.assert_array_almost_equal(model.sample(), [0., 1.])
+
+    def test_zero_by_split(self):
+
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(50, dtype=np.float32), np.ones(50, dtype=np.float32)], axis=0)
+
+        data = np.stack([f1, f2], axis=1)
+
+        model = trepan.DiscreteModel()
+        model.fit(data)
+
+        split1 = (0, 0.5, trepan.Rule.SplitType.BELOW)
+        split2 = (1, 0.5, trepan.Rule.SplitType.ABOVE)
+
+        model.zero_by_split(*split1)
+        model.zero_by_split(*split2)
+
+        for _ in range(100):
+            np.testing.assert_array_almost_equal(model.sample(), [0., 1.])
+
+    def test_split_probability(self):
+
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(50, dtype=np.float32), np.ones(50, dtype=np.float32)], axis=0)
+
+        data = np.stack([f1, f2], axis=1)
+
+        model = trepan.DiscreteModel()
+        model.fit(data)
+
+        split1 = (0, 0.5, trepan.Rule.SplitType.BELOW)
+        split2 = (1, 0.5, trepan.Rule.SplitType.ABOVE)
+
+        self.assertEqual(model.split_probability(*split1), 0.75)
+        self.assertEqual(model.split_probability(*split2), 0.5)

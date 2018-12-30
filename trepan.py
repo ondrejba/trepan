@@ -187,6 +187,19 @@ class Rule:
 
         return False
 
+    def flip_splits(self):
+
+        for idx in range(len(self.splits)):
+
+            feature_idx, split_value, split_type = self.splits[idx]
+
+            if split_type == self.SplitType.BELOW:
+                split_type= self.SplitType.ABOVE
+            else:
+                split_type = self.SplitType.BELOW
+
+            self.splits[idx] = (feature_idx, split_value, split_type)
+
 
 class Beam:
 
@@ -273,61 +286,64 @@ class Oracle:
     def gen_discrete(self, data, constraints, to_generate):
 
         # create a histogram for each feature
-        num_features = data.shape[1]
-        counts = [{} for _ in range(num_features)]
-        sums = np.zeros(num_features, dtype=np.int32)
-
-        for feature_idx in range(num_features):
-
-            values = np.unique(data[:, feature_idx])
-
-            for value in values:
-
-                count = np.sum(data[:, feature_idx] == value)
-                counts[feature_idx][value] = count
-                sums[feature_idx] += count
-
-        for count_dict, count_sum in zip(counts, sums):
-            for key in count_dict.keys():
-                count_dict[key] /= count_sum
-
-        probs = [[] for _ in range(num_features)]
-        values = [[] for _ in range(num_features)]
-
-        for idx, count_dict in enumerate(counts):
-            for key, value in count_dict.items():
-                probs[idx].append(value)
-                values[idx].append(key)
+        model = DiscreteModel()
+        model.fit(data)
 
         # generate samples
         samples = np.zeros((to_generate, data.shape[1]), dtype=np.float32)
 
         for sample_idx in range(to_generate):
 
-            while True:
-
-                # generate features
-                for feature_idx in range(num_features):
-
-                    feature = np.random.choice(values[feature_idx], size=1, replace=False, p=probs[feature_idx])
-                    samples[sample_idx, feature_idx] = feature
-
-                all_matched = True
-
-                # check for constraints
-                for side, constraint in constraints:
-                    # TODO: fix stuck problem
-                    if side == "left":
-                        if not constraint.match(samples[sample_idx]):
-                            all_matched = False
-                    else:
-                        if constraint.match(samples[sample_idx]):
-                            all_matched = False
-
-                if all_matched:
-                    break
+            samples[sample_idx] = self.sample_with_constraints(model, constraints)
 
         return samples
+
+    def sample_with_constraints(self, model, constraints):
+
+        # don't modify the original model or constraints
+        model = cp.deepcopy(model)
+        constraints = cp.deepcopy(constraints)
+
+        disj_c = []
+
+        # separate hard rules and disjunctive rules
+        for side, rule in constraints:
+            if rule.num_required == 1:
+
+                if side == "right":
+                    rule.flip_splits()
+
+                # register hard rules in the model
+                model.zero_by_split(*rule.splits[0])
+
+            else:
+                disj_c.append((side, rule))
+
+        # register a random instance of disjunctive rules in the model
+        for side, rule in disj_c:
+
+            if side == "left":
+                num_required = rule.num_required
+            else:
+                num_required = len(rule.splits) - rule.num_required + 1
+
+            for _ in range(num_required):
+
+                probabilities = np.zeros(len(rule.splits), dtype=np.float32)
+
+                for split_idx, split in enumerate(rule.splits):
+
+                    probabilities[split_idx] = model.split_probability(split[0], split[1], split[2])
+
+                probabilities /= probabilities.sum()
+
+                indices = list(range(len(rule.splits)))
+                split_idx = np.random.choice(indices, p=probabilities)
+                split = rule.splits[split_idx]
+
+                model.zero_by_split(*split)
+
+        return model.sample()
 
 
 class DiscreteModel:
@@ -369,6 +385,26 @@ class DiscreteModel:
         value_idx = self.values[feature_idx].index(value)
         self.distributions[feature_idx][value_idx] = 0
         self.distributions[feature_idx] /= self.distributions[feature_idx].sum()
+
+    def zero_by_split(self, feature_idx, split_value, split_type):
+
+        for value in self.values[feature_idx]:
+            if split_type == Rule.SplitType.BELOW and value > split_value:
+                self.set_zero(feature_idx, value)
+            elif split_type == Rule.SplitType.ABOVE and value <= split_value:
+                self.set_zero(feature_idx, value)
+
+    def split_probability(self, feature_idx, split_value, split_type):
+
+        probability = 0
+
+        for idx, value in enumerate(self.values[feature_idx]):
+            if split_type == Rule.SplitType.BELOW and value <= split_value:
+                probability += self.distributions[feature_idx][idx]
+            elif split_type == Rule.SplitType.ABOVE and value > split_value:
+                probability += self.distributions[feature_idx][idx]
+
+        return probability
 
     def sample(self):
 
