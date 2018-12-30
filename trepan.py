@@ -1,5 +1,6 @@
 import functools
 import itertools
+import time
 import copy as cp
 import numpy as np
 from scipy.stats import norm
@@ -59,11 +60,12 @@ class Trepan:
 
             return reach
 
-    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples):
+    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, profile=False):
 
         self.oracle = oracle
         self.max_internal_nodes = max_internal_nodes
         self.min_samples = min_samples
+        self.profile = profile
 
         self.num_internal_nodes = 0
 
@@ -71,15 +73,38 @@ class Trepan:
         self.root.leaf = False
         self.root.reach = 1
 
+        start = time.time()
+
         synth_data, synth_labels = self.oracle.fill_data(data, [], self.min_samples)
+
+        end = time.time() - start
+
+        if self.profile:
+            print("generate data: {:.2f} seconds".format(end))
 
         self.queue = BestFirstQueue()
         self.queue.add(1, (self.root, data, labels, synth_data, synth_labels, set()))
 
     def train(self):
 
+        step_idx = 0
+
         while not self.queue.is_empty() and self.num_internal_nodes < self.max_internal_nodes:
+
+            if self.profile:
+                print()
+                print("step {:d}".format(step_idx + 1))
+
+            start = time.time()
+
             self.step()
+
+            end = time.time() - start
+
+            if self.profile:
+                print("total: {:.2f} seconds".format(end))
+
+            step_idx += 1
 
     def predict(self, data):
 
@@ -131,6 +156,8 @@ class Trepan:
 
         all_data, all_labels = self.join_datasets(data, labels, synth_data, synth_labels)
 
+        start = time.time()
+
         best_simple_rule = find_best_binary_split(all_data, all_labels, feature_blacklist=blacklist)
 
         if best_simple_rule is None:
@@ -142,6 +169,11 @@ class Trepan:
 
         best_m_of_n_rule = beam_search(best_simple_rule, all_data, all_labels, feature_blacklist=blacklist)
         best_m_of_n_rule_pruned = prune_rule(best_m_of_n_rule, all_data, all_labels)
+
+        end = time.time() - start
+
+        if self.profile:
+            print("find split: {:.2f} seconds".format(end))
 
         node.leaf = False
         node.rule = best_m_of_n_rule_pruned
@@ -162,10 +194,17 @@ class Trepan:
             # TODO: treat empty nodes
             if np.sum(tmp_mask) > 0:
 
+                start = time.time()
+
                 tmp_synth_data, tmp_synth_labels = self.oracle.fill_data(
                     data[tmp_mask], tmp_node.get_upstream_constraints(),
                     max(self.min_samples, self.oracle.get_stop_num_samples())
                 )
+
+                end = time.time() - start
+
+                if self.profile:
+                    print("generate data: {:.2f} seconds".format(end))
 
                 _, tmp_all_labels = self.join_datasets(
                     data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels
