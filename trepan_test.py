@@ -54,7 +54,7 @@ class TestTrepan(unittest.TestCase):
         self.assertIsNone(tp.root.left_child.rule)
         self.assertIsNone(tp.root.right_child.rule)
 
-        self.assertEqual(len(tp.queue), 0)
+        self.assertTrue(tp.queue.is_empty())
 
     def test_step_continue(self):
 
@@ -81,7 +81,7 @@ class TestTrepan(unittest.TestCase):
         self.assertIsNone(tp.root.left_child.rule)
         self.assertIsNone(tp.root.right_child.rule)
 
-        self.assertEqual(len(tp.queue), 2)
+        self.assertEqual(tp.queue.size, 2)
 
     def test_train_impossible(self):
 
@@ -351,3 +351,32 @@ class TestRule(unittest.TestCase):
         self.assertTrue(rule.add_split(1, 0.5 - trepan.Rule.BACKTRACKING_TOLERANCE / 2, trepan.Rule.SplitType.BELOW))
         self.assertEqual(len(rule.splits), 0)
         self.assertEqual(len(rule.blacklist), 0)
+
+
+class TestBestFirstQueue(unittest.TestCase):
+
+    def test_add_remove(self):
+
+        queue = trepan.BestFirstQueue()
+        queue.add(0.5, "a")
+        queue.add(1, "b")
+        queue.add(0, "c")
+
+        output = [queue.dequeue() for _ in range(3)]
+
+        self.assertEqual(output, ["b", "a", "c"])
+        self.assertTrue(queue.is_empty())
+        self.assertEqual(len(queue.queue), 0)
+
+    def test_add_remove_overlap(self):
+
+        queue = trepan.BestFirstQueue()
+        queue.add(1, "a")
+        queue.add(1, "b")
+        queue.add(2, "c")
+
+        output = [queue.dequeue() for _ in range(3)]
+
+        self.assertEqual(output, ["c", "a", "b"])
+        self.assertTrue(queue.is_empty())
+        self.assertEqual(len(queue.queue), 0)

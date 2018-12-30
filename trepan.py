@@ -56,18 +56,17 @@ class Trepan:
 
         data, labels = self.oracle.fill_data(data, labels, [], min_samples)
 
-        # TODO: implement best-first queue
-        self.queue = [(self.root, data, labels, set())]
+        self.queue = BestFirstQueue()
+        self.queue.add(1, (self.root, data, labels, set()))
 
     def train(self):
 
-        while len(self.queue) > 0:
+        while not self.queue.is_empty():
             self.step()
 
     def step(self):
 
-        node, data, labels, blacklist = self.queue[0]
-        del self.queue[0]
+        node, data, labels, blacklist = self.queue.dequeue()
 
         split_data, split_labels = self.oracle.fill_data(
             data, labels, node.get_upstream_constraints(), self.min_samples
@@ -98,7 +97,7 @@ class Trepan:
                 )
 
                 if len(np.unique(test_labels_a)) > 1:
-                    self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
+                    self.queue.add(1, (node.left_child, data[mask_a], labels[mask_a], new_blacklist))
                     self.num_internal_nodes += 1
 
         if np.sum(mask_b) > 0:
@@ -111,8 +110,44 @@ class Trepan:
                 )
 
                 if len(np.unique(test_labels_b)) > 1:
-                    self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
+                    self.queue.add(1, (node.right_child, data[mask_b], labels[mask_b], new_blacklist))
                     self.num_internal_nodes += 1
+
+
+class BestFirstQueue:
+
+    def __init__(self):
+
+        self.queue = {}
+        self.size = 0
+
+    def add(self, score, payload):
+
+        if score not in self.queue:
+            self.queue[score] = [payload]
+        else:
+            self.queue[score].append(payload)
+
+        self.size += 1
+
+    def dequeue(self):
+
+        assert not self.is_empty()
+
+        max_score = np.max(list(self.queue.keys()))
+
+        to_return = self.queue[max_score][0]
+        del self.queue[max_score][0]
+
+        if len(self.queue[max_score]) == 0:
+            del self.queue[max_score]
+
+        self.size -= 1
+        return to_return
+
+    def is_empty(self):
+
+        return self.size == 0
 
 
 class Rule:
