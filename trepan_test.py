@@ -34,6 +34,31 @@ class TestTrepan(unittest.TestCase):
 
         self.assertEqual(constraints, ref_constraints)
 
+    def test_node_get_total_reach(self):
+
+        p = trepan.Trepan.Node()
+        p_lc = trepan.Trepan.Node()
+        p_rc = trepan.Trepan.Node()
+        p_lc_rc = trepan.Trepan.Node()
+
+        p.left_child = p_lc
+        p_lc.parent = p
+
+        p.right_child = p_rc
+        p_rc.parent = p
+
+        p_lc.right_child = p_lc_rc
+        p_lc_rc.parent = p_lc
+
+        p.reach = 1
+        p_lc.reach = 0.5
+        p_lc_rc.reach = 0.7
+        p_rc.rule = 0.3
+
+        total_reach = p_lc_rc.get_total_reach()
+
+        self.assertEqual(total_reach, p.reach * p_lc.reach * p_lc_rc.reach)
+
     def test_step_end(self):
 
         np.random.seed(2018)

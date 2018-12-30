@@ -45,6 +45,20 @@ class Trepan:
 
             return constraints
 
+        def get_total_reach(self):
+
+            reach = self.reach
+            parent = self.parent
+
+            while parent is not None:
+
+                reach *= parent.reach
+                parent = parent.parent
+
+            assert reach is not None
+
+            return reach
+
     def __init__(self, data, labels, oracle, max_internal_nodes, min_samples):
 
         self.oracle = oracle
@@ -55,6 +69,7 @@ class Trepan:
 
         self.root = self.Node()
         self.root.leaf = False
+        self.root.reach = 1
 
         synth_data, synth_labels = self.oracle.fill_data(data, [], self.min_samples)
 
@@ -93,9 +108,11 @@ class Trepan:
         node.right_child.parent = node
 
         mask_a, mask_b = node.rule.get_masks(data)
+        synth_mask_a, synth_mask_b = node.rule.get_masks(synth_data)
         new_blacklist = blacklist.union(node.rule.blacklist)
 
-        for tmp_mask, tmp_node in zip([mask_a, mask_b], [node.left_child, node.right_child]):
+        for tmp_mask, tmp_synth_mask, tmp_node in zip([mask_a, mask_b], [synth_mask_a, synth_mask_b],
+                                                      [node.left_child, node.right_child]):
 
             # TODO: treat empty nodes
             if np.sum(tmp_mask) > 0:
@@ -113,11 +130,14 @@ class Trepan:
 
                 tmp_node.majority_class = tmp_majority_class
                 tmp_node.fidelity = tmp_fidelity
+                tmp_node.reach = (np.sum(tmp_mask) + np.sum(tmp_synth_mask)) / all_data.shape[0]
 
                 if tmp_fidelity < 1:
 
+                    score = tmp_node.get_total_reach() * (1 - tmp_node.fidelity)
+
                     self.queue.add(
-                        1, (tmp_node, data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels, new_blacklist)
+                        score, (tmp_node, data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels, new_blacklist)
                     )
 
     def join_datasets(self, data, labels, synth_data, synth_labels):
