@@ -22,6 +22,8 @@ class Trepan:
 
             self.leaf = True
             self.majority_class = None
+            self.reach = None
+            self.fidelity = None
             self.blacklist = set()
 
         def get_upstream_constraints(self):
@@ -54,26 +56,32 @@ class Trepan:
         self.root = self.Node()
         self.root.leaf = False
 
-        data, labels = self.oracle.fill_data(data, labels, [], min_samples)
+        synth_data, synth_labels = self.oracle.fill_data(data, [], self.min_samples)
 
         self.queue = BestFirstQueue()
-        self.queue.add(1, (self.root, data, labels, set()))
+        self.queue.add(1, (self.root, data, labels, synth_data, synth_labels, set()))
 
     def train(self):
 
-        while not self.queue.is_empty():
+        while not self.queue.is_empty() and self.num_internal_nodes < self.max_internal_nodes:
             self.step()
 
     def step(self):
 
-        node, data, labels, blacklist = self.queue.dequeue()
+        node, data, labels, synth_data, synth_labels, blacklist = self.queue.dequeue()
 
-        split_data, split_labels = self.oracle.fill_data(
-            data, labels, node.get_upstream_constraints(), self.min_samples
-        )
+        all_data, all_labels = self.join_datasets(data, labels, synth_data, synth_labels)
 
-        best_simple_rule = find_best_binary_split(split_data, split_labels)
-        best_m_of_n_rule = beam_search(best_simple_rule, split_data, split_labels, feature_blacklist=blacklist)
+        best_simple_rule = find_best_binary_split(all_data, all_labels, feature_blacklist=blacklist)
+
+        if best_simple_rule is None:
+            # no more features to split
+            return
+        else:
+            # the node will become an internal node
+            self.num_internal_nodes += 1
+
+        best_m_of_n_rule = beam_search(best_simple_rule, all_data, all_labels, feature_blacklist=blacklist)
 
         node.leaf = False
         node.rule = best_m_of_n_rule
@@ -87,31 +95,58 @@ class Trepan:
         mask_a, mask_b = node.rule.get_masks(data)
         new_blacklist = blacklist.union(node.rule.blacklist)
 
-        if np.sum(mask_a) > 0:
+        for tmp_mask, tmp_node in zip([mask_a, mask_b], [node.left_child, node.right_child]):
 
-            if self.num_internal_nodes < self.max_internal_nodes:
+            # TODO: treat empty nodes
+            if np.sum(tmp_mask) > 0:
 
-                test_data_a, test_labels_a = self.oracle.fill_data(
-                    data[mask_a], labels[mask_a], node.left_child.get_upstream_constraints(),
-                    self.oracle.get_stop_num_samples()
+                tmp_synth_data, tmp_synth_labels = self.oracle.fill_data(
+                    data[tmp_mask], tmp_node.get_upstream_constraints(),
+                    max(self.min_samples, self.oracle.get_stop_num_samples())
                 )
 
-                if len(np.unique(test_labels_a)) > 1:
-                    self.queue.add(1, (node.left_child, data[mask_a], labels[mask_a], new_blacklist))
-                    self.num_internal_nodes += 1
-
-        if np.sum(mask_b) > 0:
-
-            if self.num_internal_nodes < self.max_internal_nodes:
-
-                test_data_b, test_labels_b = self.oracle.fill_data(
-                    data[mask_b], labels[mask_b], node.right_child.get_upstream_constraints(),
-                    self.oracle.get_stop_num_samples()
+                _, tmp_all_labels = self.join_datasets(
+                    data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels
                 )
 
-                if len(np.unique(test_labels_b)) > 1:
-                    self.queue.add(1, (node.right_child, data[mask_b], labels[mask_b], new_blacklist))
-                    self.num_internal_nodes += 1
+                tmp_majority_class, tmp_fidelity = self.get_majority_class(tmp_all_labels)
+
+                tmp_node.majority_class = tmp_majority_class
+                tmp_node.fidelity = tmp_fidelity
+
+                if tmp_fidelity < 1:
+
+                    self.queue.add(
+                        1, (tmp_node, data[mask_a], labels[mask_a], tmp_synth_data, tmp_synth_labels, new_blacklist)
+                    )
+
+    def join_datasets(self, data, labels, synth_data, synth_labels):
+
+        if synth_data is not None and synth_labels is not None:
+            all_data = np.concatenate([data, synth_data], axis=0)
+            all_labels = np.concatenate([labels, synth_labels], axis=0)
+        else:
+            all_data, all_labels = data, labels
+
+        return all_data, all_labels
+
+    def get_majority_class(self, labels):
+
+        classes = np.unique(labels)
+
+        majority_class = None
+        majority_fraction = None
+
+        for cls in classes:
+
+            fraction = np.sum(labels == cls) / len(labels)
+
+            if majority_fraction is None or fraction > majority_fraction:
+                majority_class = cls
+                majority_fraction = fraction
+
+        assert majority_class is not None and majority_fraction is not None
+        return majority_class, majority_fraction
 
 
 class BestFirstQueue:
@@ -174,7 +209,7 @@ class Rule:
             self.splits.append((feature_idx, split_value, split_type))
             self.blacklist.add(feature_idx)
             return True
-        else:
+        elif len(self.splits) > 1:
             # backtracking
             old_split = None
             old_split_idx = None
@@ -313,21 +348,16 @@ class Oracle:
         self.epsilon = epsilon
         self.delta = delta
 
-    def fill_data(self, data, labels, constraints, min_samples):
+    def fill_data(self, data, constraints, num_samples):
 
-        if data.shape[0] < min_samples:
+        if self.data_type == self.DataType.DISCRETE:
+            data_synth = self.gen_discrete(data, constraints, num_samples)
+        else:
+            raise NotImplementedError("Density estimates not implemented.")
 
-            if self.data_type == self.DataType.DISCRETE:
-                data_synth = self.gen_discrete(data, constraints, min_samples - data.shape[0])
-            else:
-                raise NotImplementedError("Density estimates not implemented.")
+        labels_synth = self.predict(data_synth)
 
-            labels_synth = self.predict(data_synth)
-
-            data = np.concatenate([data, data_synth], axis=0)
-            labels = np.concatenate([labels, labels_synth], axis=0)
-
-        return data, labels
+        return data_synth, labels_synth
 
     def get_stop_num_samples(self):
 
@@ -351,6 +381,8 @@ class Oracle:
 
     def sample_with_constraints(self, model, constraints):
 
+        orig_model = model
+
         # don't modify the original model or constraints
         model = cp.deepcopy(model)
         constraints = cp.deepcopy(constraints)
@@ -372,6 +404,7 @@ class Oracle:
 
         # register a random instance of disjunctive rules in the model
         for side, rule in disj_c:
+            print("x")
 
             if side == "left":
                 num_required = rule.num_required
@@ -394,7 +427,23 @@ class Oracle:
 
                 model.zero_by_split(*split)
 
-        assert not model.check_nans()
+
+        if model.check_nans():
+
+            print()
+            for constraint in constraints:
+                print(constraint[0], constraint[1].splits, constraint[1].num_required)
+
+            print()
+            print(model.distributions)
+            print(model.values)
+            print()
+
+            print(orig_model.distributions)
+            print(orig_model.values)
+            print()
+
+            raise ValueError()
 
         return model.sample()
 
@@ -416,7 +465,7 @@ class DiscreteModel:
         for feature_idx in range(self.num_features):
 
             values = sorted(np.unique(data[:, feature_idx]))
-            counts = np.zeros(len(values), dtype=np.int32)
+            counts = np.zeros(len(values), dtype=np.float32)
 
             for value_idx, value in enumerate(values):
 
@@ -425,7 +474,10 @@ class DiscreteModel:
 
             probs = counts / counts.sum()
 
-            assert np.sum(probs) == 1
+            #if not np.sum(probs) == 1:
+            #    print(np.sum(probs))
+            #    print(counts)
+            #    raise ValueError()
 
             self.distributions.append(probs)
             self.values.append(values)
@@ -508,7 +560,7 @@ def entropy(labels):
     return value
 
 
-def find_best_binary_split(data, labels):
+def find_best_binary_split(data, labels, feature_blacklist=None):
 
     num_features = data.shape[1]
     e_labels = entropy(labels)
@@ -517,6 +569,9 @@ def find_best_binary_split(data, labels):
     best_rule = None
 
     for feature_idx in range(num_features):
+
+        if feature_blacklist is not None and feature_idx in feature_blacklist:
+            continue
 
         mask_a = data[:, feature_idx] >= 0.5
         mask_b = data[:, feature_idx] < 0.5
@@ -537,12 +592,6 @@ def find_best_binary_split(data, labels):
 
 def beam_search(first_rule, data, labels, beam_width=2, feature_blacklist=None):
 
-    # don't use the same feature twice on the path to this node
-    if feature_blacklist is not None:
-        feature_blacklist.add(first_rule.splits[0][0])
-    else:
-        feature_blacklist = {first_rule.splits[0][0]}
-
     num_features = data.shape[1]
     beam = Beam(beam_width)
     beam.add_item(first_rule, first_rule.score)
@@ -557,7 +606,7 @@ def beam_search(first_rule, data, labels, beam_width=2, feature_blacklist=None):
 
                 for split_type in [Rule.SplitType.ABOVE, Rule.SplitType.BELOW]:
 
-                    if feature_idx in feature_blacklist:
+                    if feature_blacklist is not None and feature_idx in feature_blacklist:
                         continue
 
                     for op_idx in range(2):

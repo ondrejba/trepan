@@ -1,4 +1,5 @@
 import unittest
+import random
 import copy as cp
 import numpy as np
 import trepan
@@ -86,14 +87,10 @@ class TestTrepan(unittest.TestCase):
     def test_train_impossible(self):
 
         np.random.seed(2018)
+        random.seed(2018)
 
-        data = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(20, dtype=np.float32)], axis=0)
-        data = np.expand_dims(data, axis=1)
-
-        labels = np.concatenate([
-            np.zeros(10, dtype=np.float32), np.ones(10, dtype=np.float32),
-            np.ones(10, dtype=np.float32) + 1, np.ones(10, dtype=np.float32) + 2
-        ], axis=0)
+        data = np.random.uniform(0, 1, size=[100, 40])
+        labels = np.random.randint(0, 30, size=100)
 
         oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
         tp = trepan.Trepan(data, labels, oracle, 15, 50)
@@ -339,18 +336,19 @@ class TestRule(unittest.TestCase):
 
         rule = trepan.Rule(0, 0.7, trepan.Rule.SplitType.BELOW)
         rule.add_split(1, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule.add_split(2, 0.5, trepan.Rule.SplitType.ABOVE)
 
         self.assertFalse(rule.add_split(0, 0.7, trepan.Rule.SplitType.BELOW))
         self.assertFalse(rule.add_split(0, 0.5, trepan.Rule.SplitType.BELOW))
         self.assertFalse(rule.add_split(1, 0.7, trepan.Rule.SplitType.ABOVE))
 
         self.assertTrue(rule.add_split(0, 0.7, trepan.Rule.SplitType.ABOVE))
-        self.assertEqual(len(rule.splits), 1)
-        self.assertEqual(len(rule.blacklist), 1)
+        self.assertEqual(len(rule.splits), 2)
+        self.assertEqual(len(rule.blacklist), 2)
 
         self.assertTrue(rule.add_split(1, 0.5 - trepan.Rule.BACKTRACKING_TOLERANCE / 2, trepan.Rule.SplitType.BELOW))
-        self.assertEqual(len(rule.splits), 0)
-        self.assertEqual(len(rule.blacklist), 0)
+        self.assertEqual(len(rule.splits), 1)
+        self.assertEqual(len(rule.blacklist), 1)
 
 
 class TestBestFirstQueue(unittest.TestCase):
