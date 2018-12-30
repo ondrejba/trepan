@@ -275,7 +275,7 @@ class TestOracle(unittest.TestCase):
         self.assertTrue(0.4 <= p1_0 <= 0.6)
         self.assertTrue(0.4 <= p1_1 <= 0.6)
 
-    def test_sample_with_disj_constaints(self):
+    def test_sample_with_disj_constraints(self):
 
         f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
         f2 = np.concatenate([np.zeros(50, dtype=np.float32), np.ones(50, dtype=np.float32)], axis=0)
@@ -293,6 +293,57 @@ class TestOracle(unittest.TestCase):
 
         constraints = [
             ("left", rule)
+        ]
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+
+        oracle.sample_with_constraints(model, constraints)
+
+    def test_sample_failure_mode(self):
+
+        # test with a specific failure mode
+        model = trepan.DiscreteModel()
+        model.distributions = [
+            np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32),
+            np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32), np.array([0.5, 0.5], dtype=np.float32),
+            np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32), np.array([0.5, 0.5], dtype=np.float32),
+            np.array([0.5, 0.5], dtype=np.float32), np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32),
+            np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32), np.array([1.], dtype=np.float32)
+        ]
+        model.values = [
+            [0.0], [1.0], [1.0], [1.0], [1.0], [0.0, 1.0], [1.0], [1.0], [0.0, 1.0], [0.0, 1.0], [1.0], [1.0], [1.0],
+            [0.0], [1.0]
+        ]
+        model.num_features = len(model.values)
+
+        rule1 = trepan.Rule(1, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule1.add_split(5, 0.5, trepan.Rule.SplitType.BELOW)
+        rule1.num_required = 2
+
+        rule2 = trepan.Rule(14, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule2.add_split(4, 0.5, trepan.Rule.SplitType.BELOW)
+        rule2.num_required = 2
+
+        rule3 = trepan.Rule(13, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule3.add_split(7, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule3.add_split(8, 0.5, trepan.Rule.SplitType.BELOW)
+
+        rule4 = trepan.Rule(3, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule4.add_split(10, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule4.num_required = 2
+
+        rule5 = trepan.Rule(2, 0.5, trepan.Rule.SplitType.ABOVE)
+        rule5.add_split(9, 0.5, trepan.Rule.SplitType.ABOVE)
+
+        constraints = [
+            ("left", trepan.Rule(6, 0.5, trepan.Rule.SplitType.ABOVE)),
+            ("right", trepan.Rule(0, 0.5, trepan.Rule.SplitType.ABOVE)),
+            ("left", rule1),
+            ("left", rule2),
+            ("left", rule3),
+            ("left", trepan.Rule(12, 0.5, trepan.Rule.SplitType.ABOVE)),
+            ("left", rule4),
+            ("left", rule5)
         ]
 
         oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)

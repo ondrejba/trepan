@@ -81,6 +81,50 @@ class Trepan:
         while not self.queue.is_empty() and self.num_internal_nodes < self.max_internal_nodes:
             self.step()
 
+    def predict(self, data):
+
+        return self.predict_step(data, self.root)
+
+    def predict_step(self, data, node):
+
+        # edge cases
+        if node is None:
+            return None
+
+        if data is None or len(data) == 0:
+            return None
+
+        if node.leaf:
+            # leaf prediction
+            cls = node.majority_class
+
+            if cls is None:
+                cls = -1
+
+            labels = np.zeros(data.shape[0], dtype=np.int32) + cls
+
+            return labels
+
+        else:
+            # internal node aggregation
+            mask_a, mask_b = node.rule.get_masks(data)
+
+            labels_a = self.predict_step(data[mask_a], node.left_child)
+            labels_b = self.predict_step(data[mask_b], node.right_child)
+
+            labels = np.zeros(data.shape[0], dtype=np.int32)
+
+            assert labels_a is not None or np.sum(mask_a) == 0
+            assert labels_b is not None or np.sum(mask_b) == 0
+
+            if labels_a is not None:
+                labels[mask_a] = labels_a
+
+            if labels_b is not None:
+                labels[mask_b] = labels_b
+
+            return labels
+
     def step(self):
 
         node, data, labels, synth_data, synth_labels, blacklist = self.queue.dequeue()
@@ -207,8 +251,6 @@ class BestFirstQueue:
 
 
 class Rule:
-
-    # TODO: implement simple pruning
 
     BACKTRACKING_TOLERANCE = 0.001
 
@@ -402,6 +444,8 @@ class Oracle:
 
     def sample_with_constraints(self, model, constraints):
 
+        orig_model = model
+
         # don't modify the original model or constraints
         model = cp.deepcopy(model)
         constraints = cp.deepcopy(constraints)
@@ -414,8 +458,9 @@ class Oracle:
             if side == "right":
                 rule.flip_splits()
 
-            if rule.num_required == 1:
+            if len(rule.splits) == 1:
                 # register hard rules in the model
+                assert rule.num_required == 1
                 model.zero_by_split(*rule.splits[0])
 
             else:
@@ -446,7 +491,21 @@ class Oracle:
 
                 model.zero_by_split(*split)
 
-        assert not model.check_nans()
+        if model.check_nans():
+
+            for constraint in constraints:
+                print(constraint[0], constraint[1].splits, constraint[1].num_required)
+
+            print()
+            print(orig_model.distributions)
+            print(orig_model.values)
+            print()
+
+            print(model.distributions)
+            print(model.values)
+            print()
+
+            raise ValueError("NAN in the feature probabilities.")
 
         return model.sample()
 
