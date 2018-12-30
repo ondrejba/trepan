@@ -84,6 +84,7 @@ class TestTrepan(unittest.TestCase):
         self.assertEqual(len(tp.queue), 2)
 
     def test_train_impossible(self):
+
         np.random.seed(2018)
 
         data = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(20, dtype=np.float32)], axis=0)
@@ -330,3 +331,23 @@ class TestDiscreteModel(unittest.TestCase):
 
         self.assertEqual(model.split_probability(*split1), 0.75)
         self.assertEqual(model.split_probability(*split2), 0.5)
+
+
+class TestRule(unittest.TestCase):
+
+    def test_backtracking(self):
+
+        rule = trepan.Rule(0, 0.7, trepan.Rule.SplitType.BELOW)
+        rule.add_split(1, 0.5, trepan.Rule.SplitType.ABOVE)
+
+        self.assertFalse(rule.add_split(0, 0.7, trepan.Rule.SplitType.BELOW))
+        self.assertFalse(rule.add_split(0, 0.5, trepan.Rule.SplitType.BELOW))
+        self.assertFalse(rule.add_split(1, 0.7, trepan.Rule.SplitType.ABOVE))
+
+        self.assertTrue(rule.add_split(0, 0.7, trepan.Rule.SplitType.ABOVE))
+        self.assertEqual(len(rule.splits), 1)
+        self.assertEqual(len(rule.blacklist), 1)
+
+        self.assertTrue(rule.add_split(1, 0.5 - trepan.Rule.BACKTRACKING_TOLERANCE / 2, trepan.Rule.SplitType.BELOW))
+        self.assertEqual(len(rule.splits), 0)
+        self.assertEqual(len(rule.blacklist), 0)

@@ -119,6 +119,8 @@ class Rule:
 
     # TODO: implement simple pruning
 
+    BACKTRACKING_TOLERANCE = 0.001
+
     class SplitType(Enum):
 
         ABOVE = 1
@@ -133,12 +135,26 @@ class Rule:
 
     def add_split(self, feature_idx, split_value, split_type):
 
-        # TODO: add backtracking
-
         if feature_idx not in self.blacklist:
             self.splits.append((feature_idx, split_value, split_type))
             self.blacklist.add(feature_idx)
             return True
+        else:
+            # backtracking
+            old_split = None
+            old_split_idx = None
+
+            for idx, split in enumerate(self.splits):
+                if split[0] == feature_idx:
+                    old_split = split
+                    old_split_idx = idx
+
+            assert old_split is not None and old_split_idx is not None
+
+            if old_split[2] != split_type and np.abs(old_split[1] - split_value) <= self.BACKTRACKING_TOLERANCE:
+                del self.splits[old_split_idx]
+                self.blacklist.remove(feature_idx)
+                return True
 
         return False
 
