@@ -51,7 +51,7 @@ class Trepan:
         self.max_internal_nodes = max_internal_nodes
         self.min_samples = min_samples
 
-        self.num_internal_nodes = 1
+        self.num_internal_nodes = 0
 
         self.root = self.Node()
         self.root.leaf = False
@@ -117,7 +117,7 @@ class Trepan:
                 if tmp_fidelity < 1:
 
                     self.queue.add(
-                        1, (tmp_node, data[mask_a], labels[mask_a], tmp_synth_data, tmp_synth_labels, new_blacklist)
+                        1, (tmp_node, data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels, new_blacklist)
                     )
 
     def join_datasets(self, data, labels, synth_data, synth_labels):
@@ -381,8 +381,6 @@ class Oracle:
 
     def sample_with_constraints(self, model, constraints):
 
-        orig_model = model
-
         # don't modify the original model or constraints
         model = cp.deepcopy(model)
         constraints = cp.deepcopy(constraints)
@@ -404,7 +402,6 @@ class Oracle:
 
         # register a random instance of disjunctive rules in the model
         for side, rule in disj_c:
-            print("x")
 
             if side == "left":
                 num_required = rule.num_required
@@ -420,6 +417,7 @@ class Oracle:
                     probabilities[split_idx] = model.split_probability(split[0], split[1], split[2])
 
                 probabilities /= probabilities.sum()
+                assert not np.any(np.isnan(probabilities))
 
                 indices = list(range(len(rule.splits)))
                 split_idx = np.random.choice(indices, p=probabilities)
@@ -427,23 +425,7 @@ class Oracle:
 
                 model.zero_by_split(*split)
 
-
-        if model.check_nans():
-
-            print()
-            for constraint in constraints:
-                print(constraint[0], constraint[1].splits, constraint[1].num_required)
-
-            print()
-            print(model.distributions)
-            print(model.values)
-            print()
-
-            print(orig_model.distributions)
-            print(orig_model.values)
-            print()
-
-            raise ValueError()
+        assert not model.check_nans()
 
         return model.sample()
 
@@ -473,11 +455,6 @@ class DiscreteModel:
                 counts[value_idx] = count
 
             probs = counts / counts.sum()
-
-            #if not np.sum(probs) == 1:
-            #    print(np.sum(probs))
-            #    print(counts)
-            #    raise ValueError()
 
             self.distributions.append(probs)
             self.values.append(values)
@@ -530,6 +507,7 @@ class DiscreteModel:
 
             if np.any(np.isnan(self.distributions[feature_idx])):
                 has_nans = True
+                print("feature {:d}".format(feature_idx), self.distributions[feature_idx], self.values[feature_idx])
 
         return has_nans
 

@@ -93,7 +93,7 @@ class TestTrepan(unittest.TestCase):
         labels = np.random.randint(0, 30, size=100)
 
         oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
-        tp = trepan.Trepan(data, labels, oracle, 15, 50)
+        tp = trepan.Trepan(data, labels, oracle, 5, 50)
 
         tp.train()
 
@@ -121,7 +121,7 @@ class TestTrepan(unittest.TestCase):
 
         internal_count, _ = count_nodes(tp.root)
 
-        self.assertEqual(internal_count, 15)
+        self.assertEqual(internal_count, 5)
 
     def test_entropy(self):
 
