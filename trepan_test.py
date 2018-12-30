@@ -170,29 +170,65 @@ class TestTrepan(unittest.TestCase):
         np.testing.assert_almost_equal(best_n.score - trepan.entropy(labels), 0.0)
 
 
-class TestOracle(unittest.TestCase):
+class TestDiscreteModel(unittest.TestCase):
 
-    def test_gen_discrete(self):
-
-        np.random.seed(2018)
+    def test_fit(self):
 
         f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
         f2 = np.concatenate([np.zeros(1, dtype=np.float32), np.ones(99, dtype=np.float32)], axis=0)
 
         data = np.stack([f1, f2], axis=1)
 
-        oracle = trepan.Oracle(lambda x: np.zeros_like(x), trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+        model = trepan.DiscreteModel()
+        model.fit(data)
 
-        new_data = oracle.gen_discrete(data, [], 10000)
+        np.testing.assert_array_almost_equal(np.array([0.75, 0.25], dtype=np.float32), model.distributions[0])
+        np.testing.assert_array_almost_equal(np.array([0.01, 0.99], dtype=np.float32), model.distributions[1])
 
-        f1_1 = np.sum((new_data[:, 0] == 0).astype(np.float32))
-        f1_2 = np.sum((new_data[:, 0] == 1).astype(np.float32))
+        self.assertEqual([[0.0, 1.0], [0.0, 1.0]], model.values)
 
-        f2_1 = np.sum((new_data[:, 1] == 0).astype(np.float32))
-        f2_2 = np.sum((new_data[:, 1] == 1).astype(np.float32))
+    def test_sample(self):
 
-        p0_0 = f1_1 / (f1_1 + f1_2)
-        p1_0 = f2_1 / (f2_1 + f2_2)
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(1, dtype=np.float32), np.ones(99, dtype=np.float32)], axis=0)
 
-        self.assertTrue(0.74 <= p0_0 <= 0.76)
-        self.assertTrue(0.009 <= p1_0 <= 0.011)
+        data = np.stack([f1, f2], axis=1)
+
+        model = trepan.DiscreteModel()
+        model.fit(data)
+
+        np.random.seed(2018)
+
+        num_samples = 1000
+        samples = []
+
+        for _ in range(num_samples):
+            samples.append(model.sample())
+
+        samples = np.stack(samples, axis=0)
+
+        p0_0 = np.sum(samples[:, 0] == 0) / samples.shape[0]
+        p0_1 = np.sum(samples[:, 0] == 1) / samples.shape[0]
+        p1_0 = np.sum(samples[:, 1] == 0) / samples.shape[0]
+        p1_1 = np.sum(samples[:, 1] == 1) / samples.shape[0]
+
+        self.assertTrue(0.7 <= p0_0 <= 0.8)
+        self.assertTrue(0.2 <= p0_1 <= 0.3)
+        self.assertTrue(0.001 <= p1_0 <= 0.1)
+        self.assertTrue(0.8 <= p1_1 <= 1.0)
+
+    def test_set_zero(self):
+
+        f1 = np.concatenate([np.zeros(75, dtype=np.float32), np.ones(25, dtype=np.float32)], axis=0)
+        f2 = np.concatenate([np.zeros(1, dtype=np.float32), np.ones(99, dtype=np.float32)], axis=0)
+
+        data = np.stack([f1, f2], axis=1)
+
+        model = trepan.DiscreteModel()
+        model.fit(data)
+
+        model.set_zero(0, 1)
+        model.set_zero(1, 0)
+
+        for _ in range(100):
+            np.testing.assert_array_almost_equal(model.sample(), [0., 1.])

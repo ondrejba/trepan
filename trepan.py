@@ -8,6 +8,9 @@ from enum import Enum
 
 class Trepan:
 
+    # TODO: implement sequence of trees
+    # TODO: implement same class pruning
+
     class Node:
 
         def __init__(self):
@@ -18,6 +21,7 @@ class Trepan:
             self.parent = None
 
             self.leaf = True
+            self.majority_class = None
             self.blacklist = set()
 
         def get_upstream_constraints(self):
@@ -49,6 +53,10 @@ class Trepan:
 
         self.root = self.Node()
         self.root.leaf = False
+
+        data, labels = self.oracle.fill_data(data, labels, [], min_samples)
+
+        # TODO: implement best-first queue
         self.queue = [(self.root, data, labels, set())]
 
     def train(self):
@@ -80,30 +88,36 @@ class Trepan:
         mask_a, mask_b = node.rule.get_masks(data)
         new_blacklist = blacklist.union(node.rule.blacklist)
 
-        if np.sum(mask_a) > 0 and self.num_internal_nodes < self.max_internal_nodes:
+        if np.sum(mask_a) > 0:
 
-            test_data_a, test_labels_a = self.oracle.fill_data(
-                data[mask_a], labels[mask_a], node.left_child.get_upstream_constraints(),
-                self.oracle.get_stop_num_samples()
-            )
+            if self.num_internal_nodes < self.max_internal_nodes:
 
-            if len(np.unique(test_labels_a)) > 1:
-                self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
-                self.num_internal_nodes += 1
+                test_data_a, test_labels_a = self.oracle.fill_data(
+                    data[mask_a], labels[mask_a], node.left_child.get_upstream_constraints(),
+                    self.oracle.get_stop_num_samples()
+                )
 
-        if np.sum(mask_b) > 0 and self.num_internal_nodes < self.max_internal_nodes:
+                if len(np.unique(test_labels_a)) > 1:
+                    self.queue.append((node.left_child, data[mask_a], labels[mask_a], new_blacklist))
+                    self.num_internal_nodes += 1
 
-            test_data_b, test_labels_b = self.oracle.fill_data(
-                data[mask_b], labels[mask_b], node.right_child.get_upstream_constraints(),
-                self.oracle.get_stop_num_samples()
-            )
+        if np.sum(mask_b) > 0:
 
-            if len(np.unique(test_labels_b)) > 1:
-                self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
-                self.num_internal_nodes += 1
+            if self.num_internal_nodes < self.max_internal_nodes:
+
+                test_data_b, test_labels_b = self.oracle.fill_data(
+                    data[mask_b], labels[mask_b], node.right_child.get_upstream_constraints(),
+                    self.oracle.get_stop_num_samples()
+                )
+
+                if len(np.unique(test_labels_b)) > 1:
+                    self.queue.append((node.right_child, data[mask_b], labels[mask_b], new_blacklist))
+                    self.num_internal_nodes += 1
 
 
 class Rule:
+
+    # TODO: implement simple pruning
 
     class SplitType(Enum):
 
@@ -261,7 +275,7 @@ class Oracle:
         # create a histogram for each feature
         num_features = data.shape[1]
         counts = [{} for _ in range(num_features)]
-        sums = np.zeros(num_features, dtype=np.float32)
+        sums = np.zeros(num_features, dtype=np.int32)
 
         for feature_idx in range(num_features):
 
@@ -269,7 +283,7 @@ class Oracle:
 
             for value in values:
 
-                count = np.sum((data[:, feature_idx] == value).astype(np.float32))
+                count = np.sum(data[:, feature_idx] == value)
                 counts[feature_idx][value] = count
                 sums[feature_idx] += count
 
@@ -302,6 +316,7 @@ class Oracle:
 
                 # check for constraints
                 for side, constraint in constraints:
+                    # TODO: fix stuck problem
                     if side == "left":
                         if not constraint.match(samples[sample_idx]):
                             all_matched = False
@@ -313,6 +328,58 @@ class Oracle:
                     break
 
         return samples
+
+
+class DiscreteModel:
+
+    def __init__(self):
+
+        self.distributions = []
+        self.values = []
+        self.num_features = None
+
+    def fit(self, data):
+
+        assert len(data.shape) == 2
+
+        self.num_features = data.shape[1]
+
+        for feature_idx in range(self.num_features):
+
+            values = sorted(np.unique(data[:, feature_idx]))
+            counts = np.zeros(len(values), dtype=np.int32)
+
+            for value_idx, value in enumerate(values):
+
+                count = np.sum(data[:, feature_idx] == value)
+                counts[value_idx] = count
+
+            probs = counts / counts.sum()
+
+            assert np.sum(probs) == 1
+
+            self.distributions.append(probs)
+            self.values.append(values)
+
+    def set_zero(self, feature_idx, value):
+
+        assert 0 <= feature_idx < self.num_features
+        assert value in self.values[feature_idx]
+
+        value_idx = self.values[feature_idx].index(value)
+        self.distributions[feature_idx][value_idx] = 0
+        self.distributions[feature_idx] /= self.distributions[feature_idx].sum()
+
+    def sample(self):
+
+        sample = np.empty(self.num_features, dtype=np.float32)
+
+        for feature_idx in range(self.num_features):
+
+            value = np.random.choice(self.values[feature_idx], size=1, p=self.distributions[feature_idx])
+            sample[feature_idx] = value
+
+        return sample
 
 
 def information_gain(labels, labels_a, labels_b, e_labels=None):
