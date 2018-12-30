@@ -7,6 +7,10 @@ import trepan
 
 class TestTrepan(unittest.TestCase):
 
+    def setUp(self):
+        np.random.seed(2018)
+        random.seed(2018)
+
     def test_node_get_upstream_constraints(self):
 
         p = trepan.Trepan.Node()
@@ -61,8 +65,6 @@ class TestTrepan(unittest.TestCase):
 
     def test_step_end(self):
 
-        np.random.seed(2018)
-
         data = np.concatenate([np.zeros(100, dtype=np.float32), np.ones(100, dtype=np.float32)], axis=0)
         labels = cp.deepcopy(data)
         data = np.expand_dims(data, axis=1)
@@ -83,8 +85,6 @@ class TestTrepan(unittest.TestCase):
         self.assertTrue(tp.queue.is_empty())
 
     def test_step_continue(self):
-
-        np.random.seed(2018)
 
         data = np.concatenate([np.zeros(20, dtype=np.float32), np.ones(20, dtype=np.float32)], axis=0)
         data = np.expand_dims(data, axis=1)
@@ -110,9 +110,6 @@ class TestTrepan(unittest.TestCase):
         self.assertEqual(tp.queue.size, 2)
 
     def test_train_impossible(self):
-
-        np.random.seed(2018)
-        random.seed(2018)
 
         data = np.random.uniform(0, 1, size=[100, 40])
         labels = np.random.randint(0, 30, size=100)
@@ -192,8 +189,55 @@ class TestTrepan(unittest.TestCase):
         self.assertGreater(best_n.score, best_first.score)
         np.testing.assert_almost_equal(best_n.score - trepan.entropy(labels), 0.0)
 
+    def test_prune_rule_no_change(self):
+
+        data_1 = np.stack([np.zeros(25), np.zeros(25)], axis=1)
+        data_2 = np.stack([np.ones(25), np.ones(25)], axis=1)
+        data_3 = np.stack([np.zeros(25), np.ones(25)], axis=1)
+        data_4 = np.stack([np.ones(25), np.zeros(25)], axis=1)
+
+        data = np.concatenate([data_1, data_2, data_3, data_4], axis=0)
+        labels = np.concatenate([np.zeros(25), np.ones(75)], axis=0)
+
+        best_first = trepan.find_best_binary_split(data, labels)
+
+        best_n = trepan.beam_search(best_first, data, labels)
+        best_n_pruned = trepan.prune_rule(best_n, data, labels)
+
+        self.assertEqual(best_n, best_n_pruned)
+
+        self.assertGreater(best_n_pruned.score, best_first.score)
+        np.testing.assert_almost_equal(best_n_pruned.score - trepan.entropy(labels), 0.0)
+
+    def test_prune_rule_change(self):
+
+        data_1 = np.stack([np.zeros(25), np.zeros(25)], axis=1)
+        data_2 = np.stack([np.ones(25), np.ones(25)], axis=1)
+        data_3 = np.stack([np.zeros(25), np.ones(25)], axis=1)
+        data_4 = np.stack([np.ones(25), np.zeros(25)], axis=1)
+
+        data = np.concatenate([data_1, data_2, data_3, data_4], axis=0)
+        labels = np.concatenate([np.zeros(25), np.ones(75)], axis=0)
+
+        best_first = trepan.find_best_binary_split(data, labels)
+
+        best_n = trepan.beam_search(best_first, data, labels)
+
+        best_n.splits.append((1, 0.5, trepan.Rule.SplitType.ABOVE))
+
+        best_n_pruned = trepan.prune_rule(best_n, data, labels)
+
+        self.assertNotEqual(best_n, best_n_pruned)
+
+        self.assertGreater(best_n_pruned.score, best_first.score)
+        np.testing.assert_almost_equal(best_n_pruned.score - trepan.entropy(labels), 0.0)
+
 
 class TestOracle(unittest.TestCase):
+
+    def setUp(self):
+        np.random.seed(2018)
+        random.seed(2018)
 
     def test_sample_with_hard_constraints(self):
 
@@ -257,6 +301,10 @@ class TestOracle(unittest.TestCase):
 
 
 class TestDiscreteModel(unittest.TestCase):
+
+    def setUp(self):
+        np.random.seed(2018)
+        random.seed(2018)
 
     def test_fit(self):
 
@@ -357,6 +405,10 @@ class TestDiscreteModel(unittest.TestCase):
 
 class TestRule(unittest.TestCase):
 
+    def setUp(self):
+        np.random.seed(2018)
+        random.seed(2018)
+
     def test_backtracking(self):
 
         rule = trepan.Rule(0, 0.7, trepan.Rule.SplitType.BELOW)
@@ -377,6 +429,10 @@ class TestRule(unittest.TestCase):
 
 
 class TestBestFirstQueue(unittest.TestCase):
+
+    def setUp(self):
+        np.random.seed(2018)
+        random.seed(2018)
 
     def test_add_remove(self):
 

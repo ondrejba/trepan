@@ -97,9 +97,10 @@ class Trepan:
             self.num_internal_nodes += 1
 
         best_m_of_n_rule = beam_search(best_simple_rule, all_data, all_labels, feature_blacklist=blacklist)
+        best_m_of_n_rule_pruned = prune_rule(best_m_of_n_rule, all_data, all_labels)
 
         node.leaf = False
-        node.rule = best_m_of_n_rule
+        node.rule = best_m_of_n_rule_pruned
 
         node.left_child = self.Node()
         node.right_child = self.Node()
@@ -628,3 +629,39 @@ def beam_search(first_rule, data, labels, beam_width=2, feature_blacklist=None):
 
     best_rule = beam.get_highest()
     return best_rule
+
+
+def prune_rule(rule, data, labels):
+
+    change = True
+
+    while len(rule.splits) > 1 and change:
+
+        change = False
+
+        for split_idx in range(len(rule.splits)):
+
+            for op in [0, 1]:
+
+                tmp_rule = cp.deepcopy(rule)
+
+                if op == 1:
+                    if tmp_rule.num_required <= 1:
+                        continue
+                    else:
+                        tmp_rule.num_required -= 1
+
+                del tmp_rule.splits[split_idx]
+
+                mask_a, mask_b = tmp_rule.get_masks(data)
+                tmp_rule.score = information_gain(labels, labels[mask_a], labels[mask_b])
+
+                if tmp_rule.score >= rule.score:
+
+                    rule = tmp_rule
+                    change = True
+
+            if change:
+                break
+
+    return rule
