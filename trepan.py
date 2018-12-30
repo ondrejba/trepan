@@ -308,11 +308,11 @@ class Oracle:
 
         # separate hard rules and disjunctive rules
         for side, rule in constraints:
+
+            if side == "right":
+                rule.flip_splits()
+
             if rule.num_required == 1:
-
-                if side == "right":
-                    rule.flip_splits()
-
                 # register hard rules in the model
                 model.zero_by_split(*rule.splits[0])
 
@@ -342,6 +342,8 @@ class Oracle:
                 split = rule.splits[split_idx]
 
                 model.zero_by_split(*split)
+
+        assert not model.check_nans()
 
         return model.sample()
 
@@ -416,6 +418,17 @@ class DiscreteModel:
             sample[feature_idx] = value
 
         return sample
+
+    def check_nans(self):
+
+        has_nans = False
+
+        for feature_idx in range(self.num_features):
+
+            if np.any(np.isnan(self.distributions[feature_idx])):
+                has_nans = True
+
+        return has_nans
 
 
 def information_gain(labels, labels_a, labels_b, e_labels=None):
