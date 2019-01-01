@@ -77,6 +77,38 @@ class Trepan:
 
             return None
 
+        def to_string(self, feature_labels, class_labels):
+
+            if self.leaf:
+                majority_class = self.majority_class
+                if majority_class is None:
+                    majority_class = -1
+
+                str = "class {}".format(class_labels[majority_class])
+            else:
+                str = "{:d}-of-".format(self.rule.num_required)
+                str += "{"
+
+                for idx, split in enumerate(self.rule.splits):
+
+                    feature_name = feature_labels[split[0]]
+
+                    str += " {} ".format(feature_name)
+
+                    if split[2] == Rule.SplitType.BELOW:
+                        str += "< "
+                    else:
+                        str += "> "
+
+                    str += "{:.1f}".format(split[1])
+
+                    if idx < len(self.rule.splits) - 1:
+                        str += ","
+
+                str += " }"
+
+            return str
+
     def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, verbose=False):
 
         self.oracle = oracle
@@ -319,6 +351,40 @@ class Trepan:
                 return cls1, fid1
             else:
                 return node.majority_class, node.fidelity
+
+    def plot(self, feature_labels, class_labels):
+
+        import networkx as nx
+
+        nodes = []
+        edges = []
+
+        self.plot_step(self.root, nodes, edges, feature_labels, class_labels)
+
+        graph = nx.DiGraph()
+        graph.add_nodes_from(nodes)
+        graph.add_edges_from(edges)
+
+        p = nx.nx_pydot.to_pydot(graph)
+        #png_bytes = p.create_png(prog=["dot", "-Gdpi=500"])
+        png_bytes = p.create_png()
+
+        with open("tmp.png", "wb") as file:
+            file.write(png_bytes)
+
+    def plot_step(self, node, nodes, edges, feature_labels, class_labels):
+
+        nodes.append(node.to_string(feature_labels, class_labels))
+
+        if node.left_child is not None:
+            edges.append((node.to_string(feature_labels, class_labels),
+                          node.left_child.to_string(feature_labels, class_labels)))
+            self.plot_step(node.left_child, nodes, edges, feature_labels, class_labels)
+
+        if node.right_child is not None:
+            edges.append((node.to_string(feature_labels, class_labels),
+                          node.right_child.to_string(feature_labels, class_labels)))
+            self.plot_step(node.right_child, nodes, edges, feature_labels, class_labels)
 
 
 class BestFirstQueue:
