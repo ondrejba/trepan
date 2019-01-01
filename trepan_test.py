@@ -232,6 +232,82 @@ class TestTrepan(unittest.TestCase):
         self.assertGreater(best_n_pruned.score, best_first.score)
         np.testing.assert_almost_equal(best_n_pruned.score - trepan.entropy(labels), 0.0)
 
+    def test_prune_tree_all(self):
+
+        p = trepan.Trepan.Node()
+        p_lc = trepan.Trepan.Node()
+        p_rc = trepan.Trepan.Node()
+
+        p_lc.majority_class = "a"
+        p_lc.fidelity = 1.0
+        p_lc.leaf = True
+
+        p_rc.majority_class = "a"
+        p_rc.fidelity = 1.0
+        p_rc.leaf = True
+
+        p.majority_class = "a"
+        p.fidelity = 1.0
+        p.leaf = False
+
+        p.left_child = p_lc
+        p_lc.parent = p
+
+        p.right_child = p_rc
+        p_rc.parent = p
+
+        data = np.random.uniform(-1, 1, size=[100, 10])
+        labels = np.random.randint(0, 10, size=100)
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+        tp = trepan.Trepan(data, labels, oracle, 15, 50)
+        tp.root = p
+
+        tp.prune()
+
+        self.assertEqual(tp.root.majority_class, "a")
+        self.assertEqual(tp.root.fidelity, 1)
+        self.assertEqual(tp.root.left_child, None)
+        self.assertEqual(tp.root.right_child, None)
+
+    def test_prune_tree_none(self):
+
+        p = trepan.Trepan.Node()
+        p_lc = trepan.Trepan.Node()
+        p_rc = trepan.Trepan.Node()
+
+        p_lc.majority_class = "a"
+        p_lc.fidelity = 1.0
+        p_lc.leaf = True
+
+        p_rc.majority_class = "b"
+        p_rc.fidelity = 1.0
+        p_rc.leaf = True
+
+        p.majority_class = "a"
+        p.fidelity = 1.0
+        p.leaf = False
+
+        p.left_child = p_lc
+        p_lc.parent = p
+
+        p.right_child = p_rc
+        p_rc.parent = p
+
+        data = np.random.uniform(-1, 1, size=[100, 10])
+        labels = np.random.randint(0, 10, size=100)
+
+        oracle = trepan.Oracle(lambda x: x[:, 0], trepan.Oracle.DataType.DISCRETE, 0.05, 0.05)
+        tp = trepan.Trepan(data, labels, oracle, 15, 50)
+        tp.root = p
+
+        tp.prune()
+
+        self.assertEqual(tp.root.majority_class, "a")
+        self.assertEqual(tp.root.fidelity, 1)
+        self.assertEqual(tp.root.left_child, p_lc)
+        self.assertEqual(tp.root.right_child, p_rc)
+
 
 class TestOracle(unittest.TestCase):
 
