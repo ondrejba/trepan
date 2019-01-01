@@ -77,12 +77,12 @@ class Trepan:
 
             return None
 
-    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, profile=False):
+    def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, verbose=False):
 
         self.oracle = oracle
         self.max_internal_nodes = max_internal_nodes
         self.min_samples = min_samples
-        self.profile = profile
+        self.verbose = verbose
 
         self.num_internal_nodes = 0
 
@@ -98,7 +98,7 @@ class Trepan:
 
         end = time.time() - start
 
-        if self.profile:
+        if self.verbose:
             print("generate data: {:.2f} seconds".format(end))
 
         self.queue = BestFirstQueue()
@@ -110,7 +110,7 @@ class Trepan:
 
         while not self.queue.is_empty() and self.num_internal_nodes < self.max_internal_nodes:
 
-            if self.profile:
+            if self.verbose:
                 print()
                 print("step {:d}".format(step_idx + 1))
 
@@ -120,7 +120,7 @@ class Trepan:
 
             end = time.time() - start
 
-            if self.profile:
+            if self.verbose:
                 print("total: {:.2f} seconds".format(end))
 
             step_idx += 1
@@ -191,7 +191,7 @@ class Trepan:
 
         end = time.time() - start
 
-        if self.profile:
+        if self.verbose:
             print("find split: {:.2f} seconds".format(end))
 
         node.leaf = False
@@ -226,10 +226,12 @@ class Trepan:
                 if chi_square_model(tmp_node.model, first_used_model, blacklist):
                     tmp_node.model = first_used_model
                     tmp_node.model_used = False
-                    print("use old")
+                    if self.verbose:
+                        print("use old model")
                 else:
                     tmp_node.model_used = True
-                    print("use new")
+                    if self.verbose:
+                        print("use new model")
 
                 tmp_synth_data, tmp_synth_labels = None, None
                 if np.sum(tmp_mask) < max(self.min_samples, self.oracle.get_stop_num_samples()):
@@ -241,7 +243,7 @@ class Trepan:
 
                 end = time.time() - start
 
-                if self.profile:
+                if self.verbose:
                     print("generate data: {:.2f} seconds".format(end))
 
                 _, tmp_all_labels = self.join_datasets(
