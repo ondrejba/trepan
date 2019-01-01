@@ -3,6 +3,7 @@ import itertools
 import time
 import copy as cp
 import numpy as np
+from scipy.stats import chi2
 from scipy.stats import norm
 from enum import Enum
 
@@ -331,6 +332,8 @@ class Rule:
         self.splits = [(feature_idx, split_value, split_type)]
         self.blacklist = {feature_idx}
         self.score = None
+        self.f1 = None
+        self.f2 = None
 
     def add_split(self, feature_idx, split_value, split_type):
 
@@ -450,12 +453,18 @@ class Beam:
 
     def get_lowest(self):
 
+        if len(self.scores) == 0:
+            return None
+
         min_score = min(self.scores)
         idx = self.scores.index(min_score)
 
         return self.items[idx]
 
     def get_highest(self):
+
+        if len(self.scores) == 0:
+            return None
 
         max_score = max(self.scores)
         idx = self.scores.index(max_score)
@@ -697,6 +706,7 @@ def find_best_binary_split(data, labels, feature_blacklist=None):
         if feature_blacklist is not None and feature_idx in feature_blacklist:
             continue
 
+        # TODO: should consider every discrete value instead
         mask_a = data[:, feature_idx] >= 0.5
         mask_b = data[:, feature_idx] < 0.5
 
@@ -710,6 +720,8 @@ def find_best_binary_split(data, labels, feature_blacklist=None):
             best_ig = ig
             best_rule = Rule(feature_idx, 0.5, Rule.SplitType.ABOVE)
             best_rule.score = ig
+            best_rule.f1 = np.sum(mask_a)
+            best_rule.f2 = np.sum(mask_b)
 
     return best_rule
 
@@ -746,8 +758,18 @@ def beam_search(first_rule, data, labels, beam_width=2, feature_blacklist=None):
 
                         mask_a, mask_b = tmp_rule.get_masks(data)
                         tmp_rule.score = information_gain(labels, labels[mask_a], labels[mask_b])
+                        tmp_rule.f1 = np.sum(mask_a)
+                        tmp_rule.f2 = np.sum(mask_b)
 
-                        beam_changed = beam.add_item(tmp_rule, tmp_rule.score)
+                        worst_rule = beam.get_lowest()
+
+                        if worst_rule is not None:
+                            test = chi_square_rule(tmp_rule.f1, tmp_rule.f2, worst_rule.f1, worst_rule.f2)
+                        else:
+                            test = True
+
+                        if test:
+                            beam_changed = beam.add_item(tmp_rule, tmp_rule.score)
 
             if beam_changed:
                 break
@@ -790,3 +812,11 @@ def prune_rule(rule, data, labels):
                 break
 
     return rule
+
+
+def chi_square_rule(f1, f2, ef1, ef2):
+
+    chi = (((f1 - ef1) ** 2) / (f1 + ef1)) + (((f2 - ef2) ** 2) / (f2 + ef2))
+    threshold = chi2.isf(0.05, 1)
+
+    return chi > threshold

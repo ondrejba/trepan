@@ -308,6 +308,22 @@ class TestTrepan(unittest.TestCase):
         self.assertEqual(tp.root.left_child, p_lc)
         self.assertEqual(tp.root.right_child, p_rc)
 
+    def test_chi_square_rule(self):
+
+        f1 = 300
+        f2 = 700
+        ef1 = 500
+        ef2 = 500
+
+        self.assertTrue(trepan.chi_square_rule(f1, f2, ef1, ef2))
+
+        f1 = 520
+        f2 = 480
+        ef1 = 500
+        ef2 = 500
+
+        self.assertFalse(trepan.chi_square_rule(f1, f2, ef1, ef2))
+
 
 class TestOracle(unittest.TestCase):
 
