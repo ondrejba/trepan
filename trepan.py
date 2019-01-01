@@ -342,25 +342,24 @@ class Trepan:
     def prune_step(self, node):
 
         if node is None:
-            return None, None
+            return None
 
         if node.leaf:
-            return node.majority_class, node.fidelity
+            return node.majority_class
         else:
-            cls1, fid1 = self.prune_step(node.left_child)
-            cls2, fid2 = self.prune_step(node.right_child)
+            cls1 = self.prune_step(node.left_child)
+            cls2 = self.prune_step(node.right_child)
 
-            if cls1 == cls2 and fid1 == fid2 == 1.0:
+            if cls1 == cls2:
                 node.majority_class = cls1
-                node.fidelity = fid1
                 node.leaf = True
                 node.rule = None
                 node.left_child = None
                 node.right_child = None
 
-                return cls1, fid1
+                return cls1
             else:
-                return node.majority_class, node.fidelity
+                return node.majority_class
 
     def plot(self, feature_labels, class_labels):
 
