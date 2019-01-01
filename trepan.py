@@ -350,7 +350,7 @@ class Trepan:
             cls1 = self.prune_step(node.left_child)
             cls2 = self.prune_step(node.right_child)
 
-            if cls1 == cls2:
+            if cls1 == cls2 and cls1 is not None:
                 node.majority_class = cls1
                 node.leaf = True
                 node.rule = None
@@ -359,7 +359,7 @@ class Trepan:
 
                 return cls1
             else:
-                return node.majority_class
+                return None
 
     def plot(self, feature_labels, class_labels):
 
