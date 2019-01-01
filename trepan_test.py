@@ -324,6 +324,64 @@ class TestTrepan(unittest.TestCase):
 
         self.assertFalse(trepan.chi_square_rule(f1, f2, ef1, ef2))
 
+    def test_chi_square_model_accept(self):
+
+        data1 = np.stack([
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0),
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0)
+        ], axis=1)
+
+        data2 = np.stack([
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0),
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0)
+        ], axis=1)
+
+        data3 = np.stack([
+            np.concatenate([np.ones(40), np.zeros(60)], axis=0),
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0)
+        ], axis=1)
+
+        model1 = trepan.DiscreteModel()
+        model1.fit(data1)
+
+        model2 = trepan.DiscreteModel()
+        model2.fit(data2)
+
+        model3 = trepan.DiscreteModel()
+        model3.fit(data3)
+
+        self.assertTrue(trepan.chi_square_model(model1, model2, set()))
+        self.assertTrue(trepan.chi_square_model(model1, model3, set()))
+
+    def test_chi_square_model_reject(self):
+
+        data1 = np.stack([
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0),
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0)
+        ], axis=1)
+
+        data2 = np.stack([
+            np.concatenate([np.ones(30), np.zeros(70)], axis=0),
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0)
+        ], axis=1)
+
+        data3 = np.stack([
+            np.concatenate([np.ones(50), np.zeros(50)], axis=0),
+            np.concatenate([np.ones(1), np.zeros(99)], axis=0)
+        ], axis=1)
+
+        model1 = trepan.DiscreteModel()
+        model1.fit(data1)
+
+        model2 = trepan.DiscreteModel()
+        model2.fit(data2)
+
+        model3 = trepan.DiscreteModel()
+        model3.fit(data3)
+
+        self.assertFalse(trepan.chi_square_model(model1, model2, set()))
+        self.assertFalse(trepan.chi_square_model(model1, model3, set()))
+
 
 class TestOracle(unittest.TestCase):
 

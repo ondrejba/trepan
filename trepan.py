@@ -11,7 +11,6 @@ from enum import Enum
 class Trepan:
 
     # TODO: implement sequence of trees
-    # TODO: implement same class pruning
 
     class Node:
 
@@ -27,6 +26,7 @@ class Trepan:
             self.reach = None
             self.fidelity = None
             self.model = None
+            self.model_used = False
             self.blacklist = set()
 
         def get_upstream_constraints(self):
@@ -62,6 +62,21 @@ class Trepan:
 
             return reach
 
+        def get_first_used_model(self):
+
+            if self.model_used:
+                return self.model
+
+            parent = self.parent
+            while parent is not None:
+
+                if parent.model_used:
+                    return parent.model
+
+                parent = parent.parent
+
+            return None
+
     def __init__(self, data, labels, oracle, max_internal_nodes, min_samples, profile=False):
 
         self.oracle = oracle
@@ -79,6 +94,7 @@ class Trepan:
 
         synth_data, synth_labels, model = self.oracle.fill_data(data, [], self.min_samples)
         self.root.model = model
+        self.root.model_used = True
 
         end = time.time() - start
 
@@ -202,11 +218,26 @@ class Trepan:
 
                 start = time.time()
 
-                tmp_synth_data, tmp_synth_labels, tmp_model = self.oracle.fill_data(
-                    data[tmp_mask], tmp_node.get_upstream_constraints(),
-                    max(self.min_samples, self.oracle.get_stop_num_samples())
-                )
-                tmp_node.model = tmp_model
+                tmp_node.model = DiscreteModel()
+                tmp_node.model.fit(data[tmp_mask])
+
+                first_used_model = tmp_node.get_first_used_model()
+
+                if chi_square_model(tmp_node.model, first_used_model, blacklist):
+                    tmp_node.model = first_used_model
+                    tmp_node.model_used = False
+                    print("use old")
+                else:
+                    tmp_node.model_used = True
+                    print("use new")
+
+                tmp_synth_data, tmp_synth_labels = None, None
+                if np.sum(tmp_mask) < max(self.min_samples, self.oracle.get_stop_num_samples()):
+                    tmp_synth_data = self.oracle.sample(
+                        data[tmp_mask], tmp_node.get_upstream_constraints(),
+                        max(self.min_samples, self.oracle.get_stop_num_samples()) - np.sum(tmp_mask), tmp_node.model
+                    )
+                    tmp_synth_labels = self.oracle.predict(tmp_synth_data)
 
                 end = time.time() - start
 
@@ -228,7 +259,8 @@ class Trepan:
                     score = tmp_node.get_total_reach() * (1 - tmp_node.fidelity)
 
                     self.queue.add(
-                        score, (tmp_node, data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels, new_blacklist)
+                        score, (tmp_node, data[tmp_mask], labels[tmp_mask], tmp_synth_data, tmp_synth_labels,
+                                new_blacklist)
                     )
 
     def join_datasets(self, data, labels, synth_data, synth_labels):
@@ -599,6 +631,7 @@ class DiscreteModel:
 
         self.distributions = []
         self.values = []
+        self.counts = []
         self.num_features = None
 
     def fit(self, data):
@@ -621,6 +654,7 @@ class DiscreteModel:
 
             self.distributions.append(probs)
             self.values.append(values)
+            self.counts.append(counts)
 
     def set_zero(self, feature_idx, value):
 
@@ -822,14 +856,62 @@ def prune_rule(rule, data, labels):
     return rule
 
 
-def chi_square_rule(f1, f2, ef1, ef2):
+def chi_square_rule(f1, f2, ef1, ef2, alpha=0.05):
 
     chi = (((f1 - ef1) ** 2) / (f1 + ef1)) + (((f2 - ef2) ** 2) / (f2 + ef2))
-    threshold = chi2.isf(0.05, 1)
+    threshold = chi2.isf(alpha, 1)
 
     return chi > threshold
 
 
-def chi_square_model(model1, model2):
+def chi_square_model(model1, model2, blacklist, alpha=0.1):
+    """
+    Test if two discrete models approximate the same distribution.
+    :param model1:          Discrete model 1.
+    :param model2:          Discrete model 2.
+    :param blacklist:       Set of constrained features.
+    :param alpha:           Significance level before Bonferroni correction.
+    :return:                True if same, False otherwise.
+    """
 
-    pass
+    assert len(model1.distributions) == len(model2.distributions)
+    assert len(model1.values) == len(model2.values)
+
+    num_free_features = len(model1.distributions) - len(blacklist)
+
+    for feature_idx in range(len(model1.distributions)):
+
+        if feature_idx in blacklist:
+            continue
+
+        chi = 0
+
+        all_values = set(model1.values[feature_idx]).union(set(model2.values[feature_idx]))
+        num_values = len(all_values)
+
+        size_a = np.sum(model1.counts[feature_idx])
+        size_b = np.sum(model2.counts[feature_idx])
+
+        for value in all_values:
+
+            size_a_value = 0
+            if value in model1.values[feature_idx]:
+                size_a_value = model1.counts[feature_idx][model1.values[feature_idx].index(value)]
+
+            size_b_value = 0
+            if value in model2.values[feature_idx]:
+                size_b_value = model2.counts[feature_idx][model2.values[feature_idx].index(value)]
+
+            num = ((np.sqrt(size_b / size_a) * size_a_value) - (np.sqrt(size_a / size_b) * size_b_value)) ** 2
+            denom = size_a_value + size_b_value
+            chi += num / denom
+
+        dof = num_values - 1
+        level = alpha / num_free_features
+
+        threshold = chi2.isf(level, dof)
+
+        if chi > threshold:
+            return False
+
+    return True
