@@ -26,6 +26,7 @@ class Trepan:
             self.majority_class = None
             self.reach = None
             self.fidelity = None
+            self.model = None
             self.blacklist = set()
 
         def get_upstream_constraints(self):
@@ -76,7 +77,8 @@ class Trepan:
 
         start = time.time()
 
-        synth_data, synth_labels = self.oracle.fill_data(data, [], self.min_samples)
+        synth_data, synth_labels, model = self.oracle.fill_data(data, [], self.min_samples)
+        self.root.model = model
 
         end = time.time() - start
 
@@ -186,21 +188,25 @@ class Trepan:
         node.right_child.parent = node
 
         mask_a, mask_b = node.rule.get_masks(data)
-        synth_mask_a, synth_mask_b = node.rule.get_masks(synth_data)
+
+        synth_mask_a, synth_mask_b = [], []
+        if synth_data is not None:
+            synth_mask_a, synth_mask_b = node.rule.get_masks(synth_data)
+
         new_blacklist = blacklist.union(node.rule.blacklist)
 
         for tmp_mask, tmp_synth_mask, tmp_node in zip([mask_a, mask_b], [synth_mask_a, synth_mask_b],
                                                       [node.left_child, node.right_child]):
 
-            # TODO: treat empty nodes
             if np.sum(tmp_mask) > 0:
 
                 start = time.time()
 
-                tmp_synth_data, tmp_synth_labels = self.oracle.fill_data(
+                tmp_synth_data, tmp_synth_labels, tmp_model = self.oracle.fill_data(
                     data[tmp_mask], tmp_node.get_upstream_constraints(),
                     max(self.min_samples, self.oracle.get_stop_num_samples())
                 )
+                tmp_node.model = tmp_model
 
                 end = time.time() - start
 
@@ -489,24 +495,26 @@ class Oracle:
     def fill_data(self, data, constraints, num_samples):
 
         if self.data_type == self.DataType.DISCRETE:
-            data_synth = self.gen_discrete(data, constraints, num_samples)
+            model = DiscreteModel()
+            model.fit(data)
         else:
             raise NotImplementedError("Density estimates not implemented.")
 
-        labels_synth = self.predict(data_synth)
+        data_synth = None
+        labels_synth = None
 
-        return data_synth, labels_synth
+        if len(data) < num_samples:
+            data_synth = self.sample(data, constraints, num_samples - len(data), model)
+            labels_synth = self.predict(data_synth)
+
+        return data_synth, labels_synth, model
 
     def get_stop_num_samples(self):
 
         z = norm.ppf(1 - self.epsilon)
         return int(((z ** 2) * (1 - self.epsilon)) / self.epsilon)
 
-    def gen_discrete(self, data, constraints, to_generate):
-
-        # create a histogram for each feature
-        model = DiscreteModel()
-        model.fit(data)
+    def sample(self, data, constraints, to_generate, model):
 
         # generate samples
         samples = np.zeros((to_generate, data.shape[1]), dtype=np.float32)
@@ -820,3 +828,8 @@ def chi_square_rule(f1, f2, ef1, ef2):
     threshold = chi2.isf(0.05, 1)
 
     return chi > threshold
+
+
+def chi_square_model(model1, model2):
+
+    pass
