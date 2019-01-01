@@ -27,6 +27,7 @@ class Trepan:
             self.fidelity = None
             self.model = None
             self.model_used = False
+            self.index = None
             self.blacklist = set()
 
         def get_upstream_constraints(self):
@@ -103,7 +104,7 @@ class Trepan:
                     str += "{:.1f}".format(split[1])
 
                     if idx < len(self.rule.splits) - 1:
-                        str += ","
+                        str += ",\n"
 
                 str += " }"
 
@@ -117,8 +118,12 @@ class Trepan:
         self.verbose = verbose
 
         self.num_internal_nodes = 0
+        self.num_nodes = 0
 
         self.root = self.Node()
+        self.root.index = self.num_nodes
+        self.num_nodes += 1
+
         self.root.leaf = False
         self.root.reach = 1
 
@@ -230,7 +235,12 @@ class Trepan:
         node.rule = best_m_of_n_rule_pruned
 
         node.left_child = self.Node()
+        node.left_child.index = self.num_nodes
+        self.num_nodes += 1
+
         node.right_child = self.Node()
+        node.right_child.index = self.num_nodes
+        self.num_nodes += 1
 
         node.left_child.parent = node
         node.right_child.parent = node
@@ -354,37 +364,37 @@ class Trepan:
 
     def plot(self, feature_labels, class_labels):
 
-        import networkx as nx
-
         nodes = []
         edges = []
+        node_labels = {}
 
-        self.plot_step(self.root, nodes, edges, feature_labels, class_labels)
+        self.plot_step(self.root, nodes, edges, feature_labels, class_labels, node_labels)
 
-        graph = nx.DiGraph()
-        graph.add_nodes_from(nodes)
-        graph.add_edges_from(edges)
+        import pydot
+        graph = pydot.Dot(graph_type="digraph")
 
-        p = nx.nx_pydot.to_pydot(graph)
-        #png_bytes = p.create_png(prog=["dot", "-Gdpi=500"])
-        png_bytes = p.create_png()
+        for n in nodes:
+            node = pydot.Node(n, label=node_labels[n])
+            graph.add_node(node)
 
-        with open("tmp.png", "wb") as file:
-            file.write(png_bytes)
+        for e in edges:
+            edge = pydot.Edge(e[0], e[1])
+            graph.add_edge(edge)
 
-    def plot_step(self, node, nodes, edges, feature_labels, class_labels):
+        graph.write_png("tmp.png")
 
-        nodes.append(node.to_string(feature_labels, class_labels))
+    def plot_step(self, node, nodes, edges, feature_labels, class_labels, node_labels):
+
+        nodes.append(node.index)
+        node_labels[node.index] = node.to_string(feature_labels, class_labels)
 
         if node.left_child is not None:
-            edges.append((node.to_string(feature_labels, class_labels),
-                          node.left_child.to_string(feature_labels, class_labels)))
-            self.plot_step(node.left_child, nodes, edges, feature_labels, class_labels)
+            edges.append((node.index, node.left_child.index))
+            self.plot_step(node.left_child, nodes, edges, feature_labels, class_labels, node_labels)
 
         if node.right_child is not None:
-            edges.append((node.to_string(feature_labels, class_labels),
-                          node.right_child.to_string(feature_labels, class_labels)))
-            self.plot_step(node.right_child, nodes, edges, feature_labels, class_labels)
+            edges.append((node.index, node.right_child.index))
+            self.plot_step(node.right_child, nodes, edges, feature_labels, class_labels, node_labels)
 
 
 class BestFirstQueue:
